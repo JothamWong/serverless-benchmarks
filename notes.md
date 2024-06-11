@@ -37,4 +37,5 @@ TODO: Find equivalent fn that meets deployment
 1. integrate with azure trace dataset
 2. add more benchmarks from other suites if necessary
 3. zipkin
-4. find out how to integrate gem5 with this (probably very very difficult, so last prio)
+4. qemu integration
+5. find out how to integrate gem5 with this (probably very very difficult, so last prio)

@@ -181,8 +181,9 @@ class OpenWhisk(System):
         self.logging.info(f"Build the benchmark base image {repository_name}:{image_tag}.")
 
         buildargs = {"VERSION": language_version, "BASE_IMAGE": builder_image}
+        self.logging.info(f"Jotham: tag={repository_name}:{image_tag}, path={build_dir}, buildargs={buildargs}")
         image, _ = self.docker_client.images.build(
-            tag=f"{repository_name}:{image_tag}", path=build_dir, buildargs=buildargs
+            tag=f"{repository_name}:{image_tag}", path=build_dir, buildargs=buildargs, network_mode="host"
         )
 
         # Now push the image to the registry
@@ -194,11 +195,13 @@ class OpenWhisk(System):
         ret = self.docker_client.images.push(
             repository=repository_name, tag=image_tag, stream=True, decode=True
         )
+        self.logging.info("After push")
         # doesn't raise an exception for some reason
         for val in ret:
             if "error" in val:
                 self.logging.error(f"Failed to push the image to registry {registry_name}")
                 raise RuntimeError(val)
+        self.logging.info("After push 2")
         return True
 
     def package_code(

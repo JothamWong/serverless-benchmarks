@@ -3,7 +3,7 @@ PYTHON=python3
 CONFIG=config/openwhisk.json
 DEFAULT_RESULTS=experiments.json
 RESULTS_FOLDER=results
-ARGS=--config $(CONFIG) --deployment openwhisk --verbose --repetitions 100
+ARGS=--config $(CONFIG) --deployment openwhisk --verbose --repetitions 1000
 
 dynamic-html:
 	$(PYTHON) sebs.py benchmark invoke 110.dynamic-html test $(ARGS)
@@ -75,6 +75,9 @@ run-all:
 start-kind:
 	./openwhisk-deploy-kube/deploy/kind/start-kind.sh;
 
+stop-kind:
+	kind delete cluster --name kind
+
 tear-down-whisk:
 	helm uninstall owdev -n openwhisk
 
@@ -87,3 +90,13 @@ view-pods:
 
 clear-cache:
 	rm -rf cache/
+
+check-minio:
+	curl -i 10.90.36.44:9011/minio/health/live
+
+restart-deployment:
+	make tear-down-whisk
+	make stop-kind
+	make start-kind
+	make deploy-whisk
+	make clear-cache

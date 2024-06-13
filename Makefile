@@ -4,6 +4,7 @@ CONFIG=config/openwhisk.json
 DEFAULT_RESULTS=experiments.json
 RESULTS_FOLDER=results
 ARGS=--config $(CONFIG) --deployment openwhisk --verbose --repetitions 1000
+MINIO-URL=10.90.36.41
 
 dynamic-html:
 	$(PYTHON) sebs.py benchmark invoke 110.dynamic-html test $(ARGS)
@@ -52,7 +53,6 @@ graph-bfs:
 
 
 # Need to sleep to avoid openwhisk rate limiting
-# TODO: Check how to override rate limiting
 run-all: 
 	make dynamic-html
 	sleep 60 
@@ -92,7 +92,7 @@ clear-cache:
 	rm -rf cache/
 
 check-minio:
-	curl -i 10.90.36.44:9011/minio/health/live
+	curl -i $(MINIO-URL):9011/minio/health/live
 
 restart-deployment:
 	make clear-cache

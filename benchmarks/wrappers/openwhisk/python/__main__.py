@@ -30,6 +30,10 @@ def main(args):
         if not os.path.exists(fname):
             is_cold = True
             open(fname, "a").close()
+        
+        # Get mem usage in KB
+        with open('/proc/self/status') as f:
+            memusage = int(f.read().split('VmRSS:')[1].split('\n')[0][:-3].strip())
 
         return {
             "begin": begin.strftime("%s.%f"),
@@ -38,6 +42,7 @@ def main(args):
             "results_time": results_time,
             "is_cold": is_cold,
             "result": log_data,
+            "memusage": memusage,
         }
     except Exception as e:
         end = datetime.datetime.now()

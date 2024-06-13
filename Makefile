@@ -95,8 +95,8 @@ check-minio:
 	curl -i 10.90.36.44:9011/minio/health/live
 
 restart-deployment:
+	make clear-cache
 	make tear-down-whisk
 	make stop-kind
 	make start-kind
 	make deploy-whisk
-	make clear-cache

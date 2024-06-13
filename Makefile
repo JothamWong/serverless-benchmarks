@@ -1,8 +1,9 @@
+SHELL := /bin/bash
 PYTHON=python3
 CONFIG=config/openwhisk.json
 DEFAULT_RESULTS=experiments.json
 RESULTS_FOLDER=results
-ARGS=--config $(CONFIG) --deployment openwhisk --verbose --repetitions 50
+ARGS=--config $(CONFIG) --deployment openwhisk --verbose --repetitions 100
 
 dynamic-html:
 	$(PYTHON) sebs.py benchmark invoke 110.dynamic-html test $(ARGS)
@@ -71,6 +72,15 @@ run-all:
 	sleep 60 
 	make graph-bfs
 
+start-kind:
+	./openwhisk-deploy-kube/deploy/kind/start-kind.sh;
+
+tear-down-whisk:
+	helm uninstall owdev -n openwhisk
+
+deploy-whisk:
+	helm install owdev ./openwhisk-deploy-kube/helm/openwhisk -n openwhisk --create-namespace -f openwhisk-deploy-kube/deploy/kind/mycluster.yaml;
+	kubectl get pods -n openwhisk --watch
 
 view-pods:
 	kubectl get pods -n openwhisk --watch

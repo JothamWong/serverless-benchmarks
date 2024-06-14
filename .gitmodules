@@ -4,3 +4,9 @@
 [submodule "benchmarks-data"]
 	path = benchmarks-data
   url = https://github.com/spcl/serverless-benchmarks-data.git
+[submodule "wonderless"]
+	path = wonderless
+	url = https://github.com/prg-grp/wonderless.git
+[submodule "survey/serverless-community-survey-2020"]
+	path = survey/serverless-community-survey-2020
+	url = https://github.com/jeremydaly/serverless-community-survey-2020.git

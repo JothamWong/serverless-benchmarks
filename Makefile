@@ -29,6 +29,6 @@ restart-deployment:
 	make stop-kind
 	make start-kind
 	make deploy-whisk
-
-# set-cpu-freq:
-# 	sudo cpupower -c 0-47 frequency-set --min 2.5GHz --max 2.5Ghz -g performance
+	
+set-cpu-freq:
+	sudo cpupower -c 0-$$(( $$(nproc) - 1 )) frequency-set --min 2.5GHz --max 2.5Ghz -g performance

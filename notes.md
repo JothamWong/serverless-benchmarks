@@ -103,10 +103,10 @@ whisk:
     guest: "23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP"
   systemNameSpace: "/whisk.system"
   limits:
-    actionsInvokesPerminute: 120
-    actionsInvokesConcurrent: 120
-    triggersFiresPerminute: 120
-    actionsSequenceMaxlength: 120
+    actionsInvokesPerminute: 1200
+    actionsInvokesConcurrent: 1200
+    triggersFiresPerminute: 1200
+    actionsSequenceMaxlength: 1200
     actions:
       time:
         min: "100ms"
@@ -850,8 +850,13 @@ TODO: Find equivalent fn that meets deployment
 
 ## things to study or do
 
-1. integrate with azure trace dataset
-2. add more benchmarks from other suites if necessary
-3. zipkin
-4. qemu integration
-5. find out how to integrate gem5 with this (probably very very difficult, so last prio)
+1. figure out isolcpu for kubernetes
+1. cpu pinning
+1. find industry realistic functions and add to benchmarks
+1. function chaining benchmark (pass values or bucket)
+2. check why uploader has bimodal distr for jpg
+2. integrate with azure trace dataset
+3. add more benchmarks from other suites if necessary
+4. zipkin
+5. qemu integration
+6. find out how to integrate gem5 with this (probably very very difficult, so last prio)

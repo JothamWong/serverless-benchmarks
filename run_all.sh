@@ -4,7 +4,7 @@ PYTHON=/mnt/sdb/home/Jotham/serverless-benchmarks/python-venv/bin/python3.10
 CONFIG=config/openwhisk.json
 DEFAULT_RESULTS=experiments.json
 RESULTS_FOLDER="results"
-WARMUP_ARGS="--config $CONFIG --deployment openwhisk --verbose --repetitions 10"
+WARMUP_ARGS="--config $CONFIG --deployment openwhisk --verbose --repetitions 5"
 ACTUAL_ARGS="--config $CONFIG --deployment openwhisk --verbose --repetitions 1000"
 
 mkdir -p $RESULTS_FOLDER
@@ -14,7 +14,7 @@ run_experiment() {
     echo "Warming up benchmark: $benchmark"
     # Warm up results will be overridden
     $PYTHON sebs.py benchmark invoke $benchmark test $WARMUP_ARGS
-    sleep 4
+    sleep 5
     echo "Running benchmark: $benchmark"
     $PYTHON sebs.py benchmark invoke $benchmark test $ACTUAL_ARGS
 	mv $DEFAULT_RESULTS $RESULTS_FOLDER/$benchmark.results.json

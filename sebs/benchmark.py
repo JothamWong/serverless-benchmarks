@@ -5,7 +5,7 @@ import os
 import shutil
 import subprocess
 from abc import abstractmethod
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, Optional
 
 import docker
 
@@ -22,10 +22,11 @@ if TYPE_CHECKING:
 
 
 class BenchmarkConfig:
-    def __init__(self, timeout: int, memory: int, languages: List["Language"]):
+    def __init__(self, timeout: int, memory: int, languages: List["Language"], wsk_sequence: Optional[List[str]]):
         self._timeout = timeout
         self._memory = memory
         self._languages = languages
+        self._wsk_sequence = wsk_sequence
 
     @property
     def timeout(self) -> int:
@@ -46,16 +47,31 @@ class BenchmarkConfig:
     @property
     def languages(self) -> List["Language"]:
         return self._languages
+    
+    @property
+    def wsk_sequence(self) -> Optional[List[str]]:
+        if self._wsk_sequence:
+            return self._wsk_sequence
+        return None
+    
+    @property
+    def is_wsk_sequence(self) -> bool:
+        return self.wsk_sequence is not None
 
     # FIXME: 3.7+ python with future annotations
     @staticmethod
     def deserialize(json_object: dict) -> "BenchmarkConfig":
         from sebs.faas.function import Language
+        
+        wsk_sequence = None
+        if 'wsk_sequence' in json_object.keys():
+            wsk_sequence = [action for action in json_object['wsk_sequence']]
 
         return BenchmarkConfig(
             json_object["timeout"],
             json_object["memory"],
             [Language.deserialize(x) for x in json_object["languages"]],
+            wsk_sequence,
         )
 
 
@@ -92,6 +108,10 @@ class Benchmark(LoggingBase):
     @property
     def code_package(self) -> dict:
         return self._code_package
+    
+    @property
+    def output_dir(self) -> str:
+        return self._output_dir
 
     @property
     def functions(self) -> Dict[str, Any]:
@@ -148,6 +168,24 @@ class Benchmark(LoggingBase):
         Used only for testing purposes.
         """
         self._hash_value = val
+        
+    @property
+    def action_seq_no(self):
+        """Only valid if initialized by SequenceBenchmark"""
+        return self._action_seq_no
+    
+    @action_seq_no.setter
+    def action_seq_no(self, val: int):
+        self._action_seq_no = val
+        
+    @property
+    def final_seq_no(self):
+        """Only valid if initialized by SequenceBenchmark"""
+        return self._final_seq_no
+    
+    @final_seq_no.setter
+    def final_seq_no(self, val: int):
+        self._final_seq_no = val
 
     def __init__(
         self,
@@ -160,12 +198,13 @@ class Benchmark(LoggingBase):
         docker_client: docker.client,
     ):
         super().__init__()
-        self._benchmark = benchmark
         self._deployment_name = deployment_name
         self._experiment_config = config
         self._language = config.runtime.language
         self._language_version = config.runtime.version
-        self._benchmark_path = find_benchmark(self.benchmark, "benchmarks")
+        self._benchmark_path = find_benchmark(benchmark, "benchmarks")
+        # If have slash, change here to avoid docker issues
+        self._benchmark = benchmark.replace("/", ".")
         if not self._benchmark_path:
             raise RuntimeError("Benchmark {benchmark} not found!".format(benchmark=self._benchmark))
         with open(os.path.join(self.benchmark_path, "config.json")) as json_file:
@@ -235,6 +274,7 @@ class Benchmark(LoggingBase):
             language=self.language_name,
         )
 
+
         if self._code_package is not None:
             # compare hashes
             current_hash = self.hash
@@ -251,6 +291,7 @@ class Benchmark(LoggingBase):
             "python": ["*.py", "requirements.txt*"],
             "nodejs": ["*.js", "package.json"],
         }
+        
         path = os.path.join(self.benchmark_path, self.language_name)
         for file_type in FILES[self.language_name]:
             for f in glob.glob(os.path.join(path, file_type)):
@@ -287,12 +328,42 @@ class Benchmark(LoggingBase):
         ]
         for file in handlers:
             shutil.copy2(file, os.path.join(output_dir))
-
+    
+    def add_seq_deployment_files(self, output_dir):
+        handlers_dir = project_absolute_path(
+            "benchmarks", "wrappers", self._deployment_name, self.language_name
+        )
+        handlers = [
+            os.path.join(handlers_dir, file)
+            for file in self._system_config.deployment_files(
+                self._deployment_name, self.language_name
+            )
+        ]
+        
+        # If we are inside this method, the proper entry is seq_main.py
+        # So delete __main__.py and replace with seq_main.py
+        # Do that after copying the others
+        for file in handlers:
+            if "__main__.py" in file:
+                continue
+            elif "seq_main.py" in file:
+                with open(file, "r") as f:
+                    fdata = f.read()
+                fdata = fdata.replace("{seq_number}", str(self.action_seq_no))
+                fdata = fdata.replace("{final_seq}", str(self.final_seq_no))
+                directory = "/".join(file.split("/")[:-1])
+                with open(os.path.join(output_dir, "__main__.py"), "w") as f:
+                    f.write(fdata)
+            else:
+                shutil.copy2(file, os.path.join(output_dir))
+                
     def add_deployment_package_python(self, output_dir):
         # append to the end of requirements file
         packages = self._system_config.deployment_packages(
             self._deployment_name, self.language_name
         )
+        self.logging.info(f"Packages is {packages}")
+        self.logging.info(f"Output_dir is {output_dir}")
         if len(packages):
             with open(os.path.join(output_dir, "requirements.txt"), "a") as out:
                 for package in packages:
@@ -472,7 +543,6 @@ class Benchmark(LoggingBase):
     def build(
         self, deployment_build_step: Callable[[str, str, str, str, bool], Tuple[str, int]]
     ) -> Tuple[bool, str]:
-
         # Skip build if files are up to date and user didn't enforce rebuild
         if self.is_cached and self.is_cached_valid:
             self.logging.info(

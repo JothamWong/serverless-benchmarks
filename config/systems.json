@@ -206,8 +206,9 @@
         "deployment": {
           "files": [
             "__main__.py",
-            "storage.py",
-            "setup.py"
+              "storage.py",
+            "setup.py",
+            "seq_main.py"
           ],
           "packages": {
             "minio": "^5.0.10"

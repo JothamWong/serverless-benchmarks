@@ -161,6 +161,61 @@ class Cache(LoggingBase):
             cached_config[deployment]["storage"] = config
             with open(os.path.join(benchmark_dir, "config.json"), "w") as fp:
                 json.dump(cached_config, fp, indent=2)
+                
+    def add_sequence_package(self, deployment_name: str, language_name: str, code_package: "SequenceBenchmark"):
+        with self._lock:
+            language = code_package.language_name
+            language_version = code_package.language_version
+            benchmark_dir = os.path.join(self.cache_dir, code_package.benchmark)
+            os.makedirs(benchmark_dir, exist_ok=True)
+            # Check if cache directory for this deployment exist
+            cached_dir = os.path.join(benchmark_dir, deployment_name, language, language_version)
+            if not os.path.exists(cached_dir):
+                os.makedirs(cached_dir, exist_ok=True)
+                language_config = code_package.serialize()
+                package_name = os.path.basename(code_package.benchmark)
+                print(f"Package name = {package_name}")
+                cached_location = os.path.join(cached_dir, package_name)
+                # don't store absolute path to avoid problems with moving cache dir
+                relative_cached_loc = os.path.relpath(cached_location, self.cache_dir)
+                language_config["location"] = relative_cached_loc
+                date = str(datetime.datetime.now())
+                language_config["date"] = {
+                    "created": date,
+                    "modified": date,
+                }
+                
+                config = {
+                    deployment_name: {
+                        language: {
+                            "code_package": {language_version: language_config},
+                            "functions": {},
+                        }
+                    }
+                }
+                
+                # make sure not to replace other entries
+                if os.path.exists(os.path.join(benchmark_dir, "config.json")):
+                    with open(os.path.join(benchmark_dir, "config.json"), "r") as fp:
+                        cached_config = json.load(fp)
+                        if deployment_name in cached_config:
+                            # Language known, platform known, extend dictionary
+                            if language in cached_config[deployment_name]:
+                                cached_config[deployment_name][language]["code_package"][language_version] = language_config
+                            # language unknown, platform known - add new dictionary
+                            else:
+                                cached_config[deployment_name][language] = config[deployment_name][language]
+                            config = cached_config
+                with open(os.path.join(benchmark_dir, "config.json"), "w") as fp:
+                    json.dump(config, fp, indent=2)
+            else:
+                # TODO: update
+                raise RuntimeError(
+                    "Cached application {} for {} already exists!".format(
+                        code_package.benchmark, deployment_name
+                    )
+                )
+            
 
     def add_code_package(self, deployment_name: str, language_name: str, code_package: "Benchmark"):
         with self._lock:
@@ -172,7 +227,6 @@ class Cache(LoggingBase):
             cached_dir = os.path.join(benchmark_dir, deployment_name, language, language_version)
             if not os.path.exists(cached_dir):
                 os.makedirs(cached_dir, exist_ok=True)
-
                 # copy code
                 if os.path.isdir(code_package.code_location):
                     cached_location = os.path.join(cached_dir, "code")
@@ -293,7 +347,6 @@ class Cache(LoggingBase):
             benchmark_dir = os.path.join(self.cache_dir, code_package.benchmark)
             language = code_package.language_name
             cache_config = os.path.join(benchmark_dir, "config.json")
-
             if os.path.exists(cache_config):
                 functions_config: Dict[str, Any] = {function.name: {**function.serialize()}}
 

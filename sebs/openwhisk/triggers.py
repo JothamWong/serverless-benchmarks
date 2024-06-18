@@ -38,6 +38,7 @@ class LibraryTrigger(Trigger):
 
     def sync_invoke(self, payload: dict) -> ExecutionResult:
         command = self.wsk_cmd + self.get_command(payload)
+        self.logging.debug(f"Command is {''.join(command)}")
         error = None
         try:
             begin = datetime.datetime.now()

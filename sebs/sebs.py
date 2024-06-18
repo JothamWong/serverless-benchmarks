@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Optional, Dict, Type
 
@@ -8,14 +9,16 @@ from sebs import types
 from sebs.local import Local
 from sebs.cache import Cache
 from sebs.config import SeBSConfig
-from sebs.benchmark import Benchmark
+from sebs.benchmark import Benchmark, BenchmarkConfig
 from sebs.faas.system import System as FaaSSystem
 from sebs.faas.storage import PersistentStorage
 from sebs.faas.config import Config
-from sebs.utils import has_platform, LoggingHandlers, LoggingBase
+from sebs.utils import has_platform, LoggingHandlers, LoggingBase, find_benchmark
 
 from sebs.experiments.config import Config as ExperimentConfig
 from sebs.experiments import Experiment
+
+from sebs.openwhisk.seq_benchmark import SequenceBenchmark
 
 
 class SeBS(LoggingBase):
@@ -164,15 +167,33 @@ class SeBS(LoggingBase):
         config: ExperimentConfig,
         logging_filename: Optional[str] = None,
     ) -> Benchmark:
-        benchmark = Benchmark(
-            name,
-            deployment.name(),
-            config,
-            self._config,
-            self._output_dir,
-            self.cache_client,
-            self.docker_client,
-        )
+        # Do the deserialization earlier so that we can identify if sequence or not
+        benchmark_path = find_benchmark(name, "benchmarks")
+        if not benchmark_path:
+            raise RuntimeError("Benchmark {benchmark} not found!".format(benchmark=self._benchmark))
+        with open(os.path.join(benchmark_path, "config.json")) as json_file:
+            benchmark_config = BenchmarkConfig.deserialize(json.load(json_file))
+        if benchmark_config.is_wsk_sequence:
+            benchmark = SequenceBenchmark(
+                name,
+                deployment.name(),
+                config,
+                self._config,
+                self._output_dir,
+                self.cache_client,
+                self.docker_client,
+                benchmark_config
+            )
+        else:
+            benchmark = Benchmark(
+                name,
+                deployment.name(),
+                config,
+                self._config,
+                self._output_dir,
+                self.cache_client,
+                self.docker_client,
+            )
         benchmark.logging_handlers = self.generate_logging_handlers(
             logging_filename=logging_filename
         )

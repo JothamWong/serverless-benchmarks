@@ -1,7 +1,7 @@
 from abc import ABC
 from abc import abstractmethod
 from random import randrange
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type, Union
 import uuid
 
 import docker
@@ -181,7 +181,7 @@ class System(ABC, LoggingBase):
     @abstractmethod
     def update_function(self, function: Function, code_package: Benchmark):
         pass
-
+    
     """
         a)  if a cached function with given name is present and code has not changed,
             then just return function name
@@ -194,9 +194,8 @@ class System(ABC, LoggingBase):
         not changed and user didn't request update.
 
     """
-
-    def get_function(self, code_package: Benchmark, func_name: Optional[str] = None) -> Function:
-
+    def get_singular_function(self, code_package: Benchmark, func_name: Optional[str] = None) -> Function:
+        
         if code_package.language_version not in self.system_config.supported_language_versions(
             self.name(), code_package.language_name
         ):
@@ -278,6 +277,35 @@ class System(ABC, LoggingBase):
             else:
                 self.logging.info(f"Cached function {func_name} is up to date.")
             return function
+
+    def get_sequence_function(self, code_package: "SequenceBenchmark", func_name: Optional[str] = None) -> Function:
+        if code_package.language_version not in self.system_config.supported_language_versions(
+            self.name(), code_package.language_name
+        ):
+            raise Exception(
+                "Unsupported {language} version {version} in {system}!".format(
+                    language=code_package.language_name,
+                    version=code_package.language_version,
+                    system=self.name(),
+                )
+            )
+        
+        if not func_name:
+            func_name = self.default_function_name(code_package)
+        rebuilt, _ = code_package.build(self.package_code)
+        msg = "Always creating new function from scratch until I figure shit out"
+        self.logging.info("Creating new function! Reason: " + msg)
+        function = self.create_function(code_package, func_name)
+        return function
+        
+
+    def get_function(self, code_package: Union[Benchmark, "SequenceBenchmark"], func_name: Optional[str] = None) -> Function:
+        if isinstance(code_package, Benchmark):
+            return self.get_singular_function(code_package, func_name)
+        else:
+            # TODO: Disable caching for the sequence for now until I figure it out
+            return self.get_sequence_function(code_package, func_name)
+        
 
     @abstractmethod
     def update_function_configuration(self, cached_function: Function, benchmark: Benchmark):

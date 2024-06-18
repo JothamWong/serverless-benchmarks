@@ -1,6 +1,23 @@
 SHELL := /bin/bash
 MINIO-URL=10.90.36.41
 
+# Simple check if can run a simple benchmark
+test:
+	make clear-cache
+	python3 sebs.py benchmark invoke 110.dynamic-html test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 5
+
+test-chain:
+	make clear-cache
+	-wsk -i action delete split
+	-wsk -i action delete sort
+	-wsk -i action delete 601.helloworld-python-3.7
+	python3 sebs.py benchmark invoke 601.helloworld test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 5
+
+
+# Workflow for testing chaining
+dev-chaining:
+	echo "booga"
+
 start-kind:
 	./openwhisk-deploy-kube/deploy/kind/start-kind.sh;
 
@@ -23,12 +40,18 @@ clear-cache:
 check-minio:
 	curl -i $(MINIO-URL):9011/minio/health/live
 
+# Literal first time initialization
+start-deployment:
+	make clear-cache
+	make start-kind
+	make deploy-whisk
+
 restart-deployment:
 	make clear-cache
 	make tear-down-whisk
 	make stop-kind
 	make start-kind
 	make deploy-whisk
-	
+
 set-cpu-freq:
 	sudo cpupower -c 0-$$(( $$(nproc) - 1 )) frequency-set --min 2.5GHz --max 2.5Ghz -g performance

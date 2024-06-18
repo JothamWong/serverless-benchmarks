@@ -1,7 +1,7 @@
 import os
 import shutil
 import subprocess
-from typing import cast, Dict, List, Optional, Tuple, Type
+from typing import cast, Dict, List, Optional, Tuple, Type, Union
 
 import docker
 
@@ -9,6 +9,7 @@ from sebs.benchmark import Benchmark
 from sebs.cache import Cache
 from sebs.faas import System, PersistentStorage
 from sebs.faas.function import Function, ExecutionResult, Trigger
+from sebs.openwhisk.seq_benchmark import SequenceBenchmark
 from sebs.openwhisk.storage import Minio
 from sebs.openwhisk.triggers import LibraryTrigger, HTTPTrigger
 from sebs.utils import DOCKER_DIR, LoggingHandlers, execute
@@ -138,6 +139,7 @@ class OpenWhisk(System):
         image_tag = self.system_config.benchmark_image_tag(
             self.name(), benchmark, language_name, language_version
         )
+        print(f"Image tag = {image_tag}")
         if registry_name is not None and registry_name != "":
             repository_name = f"{registry_name}/{repository_name}"
         else:
@@ -168,7 +170,8 @@ class OpenWhisk(System):
         )
 
         for fn in os.listdir(directory):
-            if fn not in ("index.js", "__main__.py"):
+            self.logging.info(f"JothamWong: directory {directory} and fn {fn}")
+            if fn not in ("index.js", "__main__.py", "seq_main.py"):
                 file = os.path.join(directory, fn)
                 shutil.move(file, build_dir)
 
@@ -182,6 +185,7 @@ class OpenWhisk(System):
 
         buildargs = {"VERSION": language_version, "BASE_IMAGE": builder_image}
         self.logging.info(f"Jotham: tag={repository_name}:{image_tag}, path={build_dir}, buildargs={buildargs}")
+        # docker build tag does not play nicely with / for the tag
         image, _ = self.docker_client.images.build(
             tag=f"{repository_name}:{image_tag}", path=build_dir, buildargs=buildargs, network_mode="host"
         )
@@ -223,9 +227,17 @@ class OpenWhisk(System):
             "python": ["__main__.py"],
             "nodejs": ["index.js"],
         }
+        # NOTE: really, really hacky way to do this
+        # we assume that benchmark names with 6 are always sequence
+        # i really don't wanna change the function contract everywhere else for
+        # just openwhisk anyways
+        if benchmark.startswith("6"):
+            CONFIG_FILES["python"] = ["seq_main.py"]
+        
         package_config = CONFIG_FILES[language_name]
-
+        print(f"HAAXXXXXXXXXXXXXXXXXXX {directory=}")
         benchmark_archive = os.path.join(directory, f"{benchmark}.zip")
+        print(f"HAAXXXXXXXXXXXXXXXXXXX {benchmark_archive=}")
         subprocess.run(
             ["zip", benchmark_archive] + package_config, stdout=subprocess.DEVNULL, cwd=directory
         )
@@ -247,8 +259,8 @@ class OpenWhisk(System):
             "MINIO_STORAGE_CONNECTION_URL",
             storage.config.address,
         ]
-
-    def create_function(self, code_package: Benchmark, func_name: str) -> "OpenWhiskFunction":
+        
+    def __create_single_function(self, code_package: Benchmark, func_name: str) -> "OpenWhiskFunction":
         self.logging.info("Creating function as an action in OpenWhisk.")
         try:
             actions = subprocess.run(
@@ -265,6 +277,7 @@ class OpenWhisk(System):
                     break
 
             function_cfg = OpenWhiskFunctionConfig.from_benchmark(code_package)
+            print(f"Function cfg is {function_cfg}")
             function_cfg.storage = cast(Minio, self.get_storage()).config
             if function_found:
                 # docker image is overwritten by the update
@@ -323,6 +336,109 @@ class OpenWhisk(System):
         res.add_trigger(trigger)
 
         return res
+    
+    def __create_sequence_function(self, code_package: SequenceBenchmark, func_name: str) -> "OpenWhiskFunction":
+        self.logging.info("Creating sequence function as an action in OpenWhisk.")
+        try:
+            actions = subprocess.run(
+                [*self.get_wsk_cmd(), "action", "list"],
+                stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+            )
+            function_cfg = OpenWhiskFunctionConfig.from_benchmark(code_package)
+            print(f"Function cfg is {function_cfg}")
+            function_cfg.storage = cast(Minio, self.get_storage()).config            
+            function_found = False
+            for line in actions.stdout.decode().split("\n"):
+                if line:
+                    self.logging.info(line)
+                if line and func_name in line.split()[0]:
+                    function_found = True
+                    break
+            if function_found:
+                # Docker image is overwritten by the update
+                res = OpenWhiskFunction(
+                    func_name, code_package.benchmark, code_package.hash, function_cfg
+                )
+                # Update function - we don't know what version is stored
+                self.logging.info(f"Retrieved existing OpenWhisk action {func_name}.")
+                self.update_function(res, code_package)
+            else:
+                try:
+                    self.logging.info(f"Creating new OpenWhisk sequence {func_name}")
+                    for action in code_package.actions:
+                        docker_image = self.system_config.benchmark_image_name(
+                                    self.name(),
+                                    action.benchmark,
+                                    action.language_name,
+                                    action.language_version,
+                        )
+                        self.logging.info(f"Creating new OpenWhisk action {action.benchmark}")
+                        self.logging.info(f"Action code location is {action.code_location}")
+                        self.logging.info(f"Docker image is {docker_image}")
+                        subprocess.run(
+                            [
+                                *self.get_wsk_cmd(),
+                                "action",
+                                "create",
+                                action.benchmark,
+                                "--web",
+                                "true",
+                                "--docker",
+                                docker_image,
+                                "--memory",
+                                str(action.benchmark_config.memory),
+                                "--timeout",
+                                str(action.benchmark_config.timeout * 1000),
+                                *self.storage_arguments(),
+                                action.code_location,
+                            ],
+                            stderr=subprocess.PIPE,
+                            stdout=subprocess.PIPE,
+                            check=True,
+                        )
+                    self.logging.info("Successfully created all actions in seq")
+                    subprocess.run(
+                        [
+                            *self.get_wsk_cmd(),
+                            "action",
+                            "create",
+                            func_name,
+                            "--web",
+                            "true",
+                            "--sequence",
+                            ",".join([action.benchmark for action in code_package.actions]),
+                            "--memory",
+                            str(code_package.benchmark_config.memory),
+                            "--timeout",
+                            str(code_package.benchmark_config.timeout * 1000),
+                            *self.storage_arguments(),
+                        ],
+                        stderr=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        check=True,
+                    )
+                    res = OpenWhiskFunction(
+                        func_name, code_package.benchmark, code_package.hash, function_cfg
+                    )
+                except subprocess.CalledProcessError as e:
+                    self.logging.error(f"Cannot create action {func_name}")
+                    self.logging.error(f"Output: {e.stderr.decode('utf-8')}")
+        except FileNotFoundError:
+            self.logging.error("Could not retrieve OpenWhisk functions - is path to wsk correct?")
+            raise RuntimeError("Failed to access wsk binary")
+        trigger = LibraryTrigger(func_name, self.get_wsk_cmd())
+        trigger.logging_handlers = self.logging_handlers
+        res.add_trigger(trigger)
+        return res
+
+    def create_function(self, code_package: Union[Benchmark, SequenceBenchmark], func_name: str) -> "OpenWhiskFunction":
+        if isinstance(code_package, Benchmark):
+            return self.__create_single_function(code_package, func_name)
+        elif isinstance(code_package, SequenceBenchmark):
+            return self.__create_sequence_function(code_package, func_name)
+        else:
+            raise TypeError(f"Expected codepackage to be [Benchmark,SequenceBenchmark] but got {type(code_package)}")
 
     def update_function(self, function: Function, code_package: Benchmark):
         self.logging.info(f"Update an existing OpenWhisk action {function.name}.")

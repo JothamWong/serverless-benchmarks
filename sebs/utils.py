@@ -66,6 +66,19 @@ def find(name, path):
             return os.path.join(root, name)
     return None
 
+def find_sequence(name: str, path):
+    benchmark_base_name = name.split("/")[0]
+    action_name = name.split("/")[1]
+    for root, dirs, files in os.walk(path):
+        if benchmark_base_name in dirs:
+            # Found benchmark base
+            path = os.path.join(root, benchmark_base_name)
+            break
+    for root, dirs, files in os.walk(path):
+        if action_name in dirs:
+            return os.path.join(path, action_name)
+    return None
+
 
 def create_output(directory, preserve_dir, verbose):
     output_dir = os.path.abspath(directory)
@@ -134,7 +147,11 @@ def configure_logging():
 
 def find_benchmark(benchmark: str, path: str):
     benchmarks_dir = os.path.join(PROJECT_DIR, path)
-    benchmark_path = find(benchmark, benchmarks_dir)
+    # Check if have slash ==> sequence
+    if "/" in benchmark:
+        benchmark_path = find_sequence(benchmark, benchmarks_dir)
+    else:
+        benchmark_path = find(benchmark, benchmarks_dir)
     return benchmark_path
 
 

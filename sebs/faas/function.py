@@ -164,6 +164,40 @@ class ExecutionResult:
         ret.request_id = cached_config["request_id"]
         ret.output = cached_config["output"]
         return ret
+    
+
+class NonBlockingExecutionResult:
+    activation_timestamp: int
+    return_timestamp: int
+    request_id: str
+    failure: bool
+    
+    def __init__(self):
+        self.request_id = ""
+        self.failure = False
+        self.activation_timestamp = 0
+        self.return_timestamp = 0
+        
+    @staticmethod
+    def deserialize(response: str, begin: int, end: int) -> "NonBlockingExecutionResult":
+        # There seems to be only two cases
+        # Failure:
+        # 'error: Unable to invoke action '601.helloworld-p': 
+        # The requested resource does not exist. (code DwOdq10RVdKPOQnz7njiPxNcuNOy7vT3)'
+        # Success:
+        # 'ok: invoked /_/601.helloworld-python-3.7 with id 216ffb8223024fcdaffb8223026fcd81'
+        ret = NonBlockingExecutionResult()
+        ret.activation_timestamp = begin
+        ret.return_timestamp = end
+        
+        if response.startswith("error:"):
+            ret.failure = True
+        elif response.startswith("ok:"):
+            response = response.strip()
+            ret.request_id = response.split(" ")[-1]
+        else:
+            raise ValueError(f"Unaccounted for case: {response}")
+        return ret   
 
 
 """
@@ -240,6 +274,14 @@ class Trigger(ABC, LoggingBase):
     @staticmethod
     @abstractmethod
     def trigger_type() -> "Trigger.TriggerType":
+        pass
+    
+    @abstractmethod
+    def openwhisk_nonblocking_invoke(self, payload: dict) -> "NonBlockingExecutionResult":
+        pass
+    
+    @abstractmethod
+    def parse_nb_results(self, nb_result: NonBlockingExecutionResult) -> ExecutionResult:
         pass
 
     @abstractmethod

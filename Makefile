@@ -1,10 +1,14 @@
 SHELL := /bin/bash
 MINIO-URL=10.90.36.41
 
+schedule:
+	make clear-cache
+	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config schedule.json
+
 # Simple check if can run a simple benchmark
 test:
 	make clear-cache
-	python3 sebs.py benchmark invoke 110.dynamic-html test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 5
+	python3 sebs.py benchmark invoke 110.dynamic-html test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 5 --trigger library
 
 test-chain:
 	make clear-cache

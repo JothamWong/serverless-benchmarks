@@ -4,16 +4,19 @@ import functools
 import os
 import traceback
 from typing import cast, Optional
+import time
 
 import click
 
 import sebs
 from sebs import SeBS
+import sebs.experiments
 from sebs.types import Storage as StorageTypes
 from sebs.regression import regression_suite
 from sebs.utils import update_nested_dict, catch_interrupt
 from sebs.faas import System as FaaSSystem
 from sebs.faas.function import Trigger
+import sebs.utils
 
 PROJECT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -257,6 +260,7 @@ def invoke(
         trigger = triggers[0]
     for i in range(repetitions):
         sebs_client.logging.info(f"Beginning repetition {i+1}/{repetitions}")
+        print(f"{input_config=}")
         ret = trigger.sync_invoke(input_config)
         if ret.stats.failure:
             sebs_client.logging.info(f"Failure on repetition {i+1}/{repetitions}")
@@ -270,6 +274,146 @@ def invoke(
     with open(result_file, "w") as out_f:
         out_f.write(sebs.utils.serialize(result))
     sebs_client.logging.info("Save results to {}".format(os.path.abspath(result_file)))
+    
+    
+"""
+Schedule invocations with a json file of the format:
+{
+  "functions": [
+    {
+      "name": "benchmark-name",
+      "invocations": [
+        {
+          "timestamp": "2024-06-18T10:30:00Z"
+        },
+        {
+          "timestamp": "2024-06-18T14:00:00Z"
+        }
+      ]
+    },
+}
+"""
+@cli.group()
+def schedule():
+    pass
+
+"""Force usage of library. Exposing action as http prevents simple non-blocking usage"""
+@schedule.command()
+@click.option("--schedule_config", type=str, default="schedule.json", help="path to schedule")
+@click.option(
+    "--trigger_t",
+    type=click.Choice(["library"]),
+    default="library",
+    help="Function trigger to be used.",
+)
+@click.option(
+    "--memory",
+    default=None,
+    type=int,
+    help="Override default memory settings for the benchmark function.",
+)
+@click.option(
+    "--timeout",
+    default=None,
+    type=int,
+    help="Override default timeout settings for the benchmark function.",
+)
+@common_params
+def run_schedule(
+    schedule_config,
+    trigger_t,
+    memory,
+    timeout,
+    **kwargs,
+):
+    (
+        config,
+        output_dir,
+        logging_filename,
+        sebs_client,
+        deployment_client,
+    ) = parse_common_params(**kwargs)
+    
+    experiment_config = sebs_client.get_experiment_config(config["experiments"])
+    with open(schedule_config, "r") as fp:
+        schedule_config = json.load(fp)
+    schedule_config = sebs_client.get_schedule_config(schedule_config)
+
+    triggers_m = {}
+    for benchmark in schedule_config.fns:
+        update_nested_dict(config, ["experiments", "benchmark"], benchmark)
+        benchmark_obj = sebs_client.get_benchmark(
+            benchmark,
+            deployment_client,
+            experiment_config,
+            logging_filename=logging_filename
+        )
+        # TODO: Make this better
+        if memory is not None:
+            benchmark_obj.benchmark_config.memory = memory
+        if timeout is not None:
+            benchmark_obj.benchmark_config.timeout = timeout
+
+        func = deployment_client.get_function(
+            benchmark_obj,
+            deployment_client.default_function_name(benchmark_obj),
+        )
+        storage = deployment_client.get_storage(replace_existing=experiment_config.update_storage)
+        # TODO: Make this individual
+        input_config = benchmark_obj.prepare_input(storage=storage, size="small")
+        
+        result = sebs.experiments.ExperimentResult(experiment_config, deployment_client.config)
+        result.begin()
+        
+        trigger_type = Trigger.TriggerType.get(trigger_t)
+        triggers = func.triggers(trigger_type)
+        if len(triggers) == 0:
+            trigger = deployment_client.create_trigger(func, trigger_type)
+        else:
+            trigger = triggers[0]
+        print(f"{benchmark=}")
+        triggers_m[benchmark] = {}
+        triggers_m[benchmark]["trigger"] = trigger
+        triggers_m[benchmark]["function"] = func
+        triggers_m[benchmark]["input"] = input_config
+        triggers_m[benchmark]["result"] = result
+        triggers_m[benchmark]["activation_ids"] = []
+    
+    # Scheduling main loop    
+    start = time.time_ns()
+    for so in schedule_config.schedule:
+        now = time.time_ns()
+        scheduled_time = start + so.timestamp  # in nanoseconds
+        if scheduled_time > now:
+            delta_s = (scheduled_time - now) / 1_000_000_000
+            sebs_client.logging.info(f"Sleeping for {delta_s} seconds")
+            time.sleep(delta_s)
+
+        sebs_client.logging.info(f"Invoking {so.fn_name} at {scheduled_time}")
+        trigger = triggers_m[so.fn_name]["trigger"] 
+        input_config = triggers_m[so.fn_name]["input"]
+        aids = triggers_m[so.fn_name]["activation_ids"]
+        
+        ret = trigger.openwhisk_nonblocking_invoke(input_config)
+        aids.append(ret)
+
+    time.sleep(2)
+    # Collect results main loop, can now block until result is done
+    # becos metrics are saved locally at the node itself
+    for benchmark in triggers_m.keys():
+        trigger = triggers_m[benchmark]["trigger"]
+        func = triggers_m[benchmark]["function"]
+        result = triggers_m[benchmark]["result"]
+        for aid in triggers_m[benchmark]["activation_ids"]:
+            ret = trigger.parse_nb_results(aid)
+            result.add_invocation(func, ret)
+        result.end()
+        # Save separately
+        result_file = os.path.join(output_dir, f"experiments_scheduled_{benchmark}.json")
+        with open(result_file, "w") as out_f:
+            out_f.write(sebs.utils.serialize(result))
+        sebs_client.logging.info("Save results to {}".format(os.path.abspath(result_file)))
+    sebs_client.logging.info("Done with schedule experiment")
 
 
 @benchmark.command()

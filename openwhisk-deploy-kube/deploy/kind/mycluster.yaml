@@ -31,10 +31,11 @@ affinity:
 toleration:
   enabled: false
 invoker:
-  options: "-Dwhisk.kubernetes.user-pod-node-affinity.enabled=false"
+  options: "-Dwhisk.kubernetes.user-pod-node-affinity.enabled=false -Dwhisk.spi.LogStoreProvider=org.apache.openwhisk.core.containerpool.logging.LogDriverLogStoreProvider"
   # must use KCF as kind uses containerd as its container runtime
   containerFactory:
     impl: "kubernetes"
+  replicaCount: 4
 
 # This will install user-events, prometheus and grafana on cluster with already preconfigured grafana dashboards for visualizing user metrics
 # grafana credentials are admin/admin

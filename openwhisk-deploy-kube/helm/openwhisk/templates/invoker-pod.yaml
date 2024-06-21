@@ -81,6 +81,14 @@ spec:
 {{ include "openwhisk.docker.imagePullSecrets" . | indent 6 }}
       containers:
       - name: invoker
+        resources:
+          limits: 
+            cpu: "1"
+          requests:
+            cpu: "1"
+        args:
+          - -cpus
+          - "2"
         image: "{{- .Values.docker.registry.name -}}{{- .Values.invoker.imageName -}}:{{- .Values.invoker.imageTag -}}"
         imagePullPolicy: {{ .Values.invoker.imagePullPolicy | quote }}
 {{- if and (eq .Values.invoker.containerFactory.impl "docker") .Values.invoker.containerFactory.networkConfig.dns.inheritInvokerConfig }}

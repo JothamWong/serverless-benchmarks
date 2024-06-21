@@ -25,6 +25,8 @@ with open(schedule_file, "r") as inf:
 
 traces: List[ScheduleObject] = []
 
+fn_counts = {}
+
 for fn_obj in schedule["functions"]:
     name = fn_obj["name"]
     invocations = fn_obj["invocations"]
@@ -33,9 +35,13 @@ for fn_obj in schedule["functions"]:
     for timestamp in invocations:
         so = ScheduleObject(name, timestamp)
         traces.append(so)
+    
+    fn_counts[name] = len(invocations)
 
 traces.sort(key=lambda so: so.timestamp)
 
 with open("verification.txt", "w") as outf:
     for so in traces:
         outf.write(f"{so}\n")
+    for name in fn_counts.keys():
+        outf.write(f"{name}: {fn_counts[name]}\n")

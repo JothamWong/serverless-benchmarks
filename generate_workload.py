@@ -1,5 +1,4 @@
 import json
-from tqdm import tqdm
 
 schedule_config = {"functions": []}
 
@@ -8,7 +7,7 @@ with open("candidates_out_1_14.json", "r") as inf:
     
 ONE_SECOND = 1_000_000_000
 ONE_MINUTE = 60_000_000_000
-SCALE = 0.1
+SCALE = 0.005
 # DURATION = 1440
 DURATION = 1  # Fix to 5 minutes first
 

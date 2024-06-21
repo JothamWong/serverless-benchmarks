@@ -1,9 +1,15 @@
 SHELL := /bin/bash
 MINIO-URL=10.90.36.41
 
+gen-candidates:
+	python3 generate_candidates.py
+
+gen-schedule:
+	python3 generate_workload.py
+
 schedule:
 	make clear-cache
-	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config schedule.json
+	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json
 
 # Simple check if can run a simple benchmark
 test:

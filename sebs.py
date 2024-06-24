@@ -10,6 +10,7 @@ import subprocess
 import sys
 import signal
 import shutil
+import matplotlib.pyplot as plt
 
 from dataclasses import dataclass
 from tqdm import tqdm
@@ -517,6 +518,12 @@ def __analyze_schedule_results(
     latest_invocation_end = None
     successful_invocations = 0
     
+    # Overall metrics for plotting stacked bar chart
+    benchmarks = []
+    overall_queueing_latencies = []
+    overall_initialization_latencies = []
+    overall_execution_latencies = []
+    
     # Benchmark specific metric
     for benchmark in triggers_m.keys():
         with open(os.path.join(result_dir, f"experiments_scheduled_{benchmark}.json")) as outf:
@@ -537,6 +544,7 @@ def __analyze_schedule_results(
         if len(json_dict["_invocations"].keys()) == 0:
             print(f"No invocations.")
             continue
+        benchmarks.append(benchmark)
         # Will only have one invocations key
         invocation_key = list(json_dict["_invocations"].keys())[0]
         
@@ -586,6 +594,12 @@ def __analyze_schedule_results(
         result_f.write(f"Num cold: {num_cold}\n")
         result_f.write(f"End to end latency: {np.mean(end_to_end_latencies)}\n")
         result_f.write("***********************************************\n")
+        
+        overall_queueing_latencies.append(np.mean(queueing_latencies))
+        overall_initialization_latencies.append(np.mean(initialization_latencies))
+        overall_execution_latencies.append(np.mean(function_execution_durations))
+        
+
     # Actual requests/sec
     result_f.write(f"Actual invocation start: {earliest_invocation_start}\n")
     result_f.write(f"Actual invocation end: {latest_invocation_end}\n")
@@ -593,6 +607,31 @@ def __analyze_schedule_results(
     invocation_delta = int((latest_invocation_end - earliest_invocation_start) / timedelta(seconds=1))
     result_f.write(f"Actual invocations/second: {successful_invocations / invocation_delta}\n")
     result_f.close()
+    
+    # Write to stacked bar chart
+    bars = {
+        "Queueing": np.array(overall_queueing_latencies),
+        "Initialization": np.array(overall_initialization_latencies),
+        "Execution": np.array(overall_execution_latencies)
+    }
+    
+    print("SHAPES")
+    print(bars["Queueing"].shape)
+    print(bars["Initialization"].shape)
+    print(bars["Execution"].shape)
+    
+    fig, ax = plt.subplots()
+    bottom = np.zeros(len(benchmarks))
+    width = 0.5
+    for label, times in bars.items():
+        p = ax.bar(benchmarks, times, width, label=label, bottom=bottom)
+        bottom += times
+    ax.set_title("Timing breakdown per benchmark")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    fig.autofmt_xdate()
+    plt.show()
+    plt.savefig(os.path.join(result_dir, "results.png"), bbox_inches="tight", dpi=100)
 
 
 @benchmark.command()

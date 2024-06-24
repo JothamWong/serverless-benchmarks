@@ -1,6 +1,4 @@
-from typing import Dict, List
-
-import heapq
+from typing import List
 
 class ScheduleObject:
     def __init__(self, timestamp: int, fn_name: str):
@@ -27,5 +25,6 @@ class ScheduleConfig:
             invocations = fn_dict["invocations"]
             for ts in invocations:
                 so = ScheduleObject(ts, fn_name)
-                heapq.heappush(cfg.schedule, so)
+                cfg.schedule.append(so)
+        cfg.schedule.sort(key=lambda so: so.timestamp)
         return cfg

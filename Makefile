@@ -9,7 +9,7 @@ gen-schedule:
 
 schedule:
 	make clear-cache
-	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json
+	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --output-dir tmpscheduled
 
 # Simple check if can run a simple benchmark
 test:

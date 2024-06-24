@@ -5,7 +5,7 @@ import subprocess
 from typing import Dict, List, Optional  # noqa
 import time
 
-from sebs.faas.function import ExecutionResult, NonBlockingExecutionResult, Trigger
+from sebs.faas.function import ExecutionResult, NonBlockingExecutionResult, Trigger, OpenWhiskExecutionResult
 
 
 class LibraryTrigger(Trigger):
@@ -16,7 +16,7 @@ class LibraryTrigger(Trigger):
             self._wsk_cmd = [*wsk_cmd, "action", "invoke", "--result", self.fname]
             # no --result means non-blocking
             self._nb_wsk_cmd = [*wsk_cmd, "action", "invoke", self.fname]
-            self._wsk_get_cmd = [*wsk_cmd, "activation", "result"]
+            self._wsk_get_cmd = [*wsk_cmd, "activation", "get"]
 
     @staticmethod
     def trigger_type() -> "Trigger.TriggerType":
@@ -55,17 +55,16 @@ class LibraryTrigger(Trigger):
         return params
     
     def parse_nb_results(self, nb_result: NonBlockingExecutionResult) -> ExecutionResult:
-        # TODO: Block until result is done, possibly needed for super long running functions
-        # but serverless fns by defn are short running so prob not needed
+        """Blocks until result is done"""
         command = self.wsk_get_cmd + [str(nb_result.request_id)]
-        self.logging.info(f"Command is {' '.join(command)}")
         error = None
-        try:
-            # We loop because it is possible when we arrive here, the non-blocking
-            # result hasn't even been scheduled yet
-            while True:
+        self.logging.info(f"{command=}")
+        # We loop because it is possible when we arrive here, the non-blocking
+        # result hasn't even been scheduled yet
+        while True: 
+            try:
+                # This is actual request time
                 begin = datetime.datetime.now()
-                # FIXME: `run` fails, have to use `call` and I have no idea why
                 response = subprocess.run(
                     command,
                     stdout=subprocess.PIPE,
@@ -73,29 +72,42 @@ class LibraryTrigger(Trigger):
                 )
                 end = datetime.datetime.now()
                 parsed_response = response.stdout.decode("utf-8")
-                if parsed_response != "":
+                # This means that the activation was queued but did not finish
+                if 'error: Unable to get result' in parsed_response or parsed_response == "":
+                    # Busy poll
+                    time.sleep(0.125)
+                    continue
+                elif "error" in parsed_response or "Error" in parsed_response:
+                    # Doomed break
+                    error = ValueError("Failed")
                     break
-                # Sleep for a bit to avoid calling a command which is doomed to fail
-                time.sleep(0.125)
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            end = datetime.datetime.now()
-            error = e
-            print(e)
-        
-        openwhisk_result = ExecutionResult.from_times(begin, end)
+                elif parsed_response != "" and not parsed_response.startswith("error:"):
+                    # Successful break
+                    break
+                else:
+                    raise ValueError("Some new error was encountered: " + parsed_response)
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                end = datetime.datetime.now()
+                error = e
+                print(e)
+            except Exception as e:
+                print(e)
+            
+        openwhisk_result = OpenWhiskExecutionResult.from_times(begin, end)
         if error is not None:
             self.logging.error("Invocation of {} failed!".format(self.fname))
             self.logging.error(error)
             openwhisk_result.stats.failure = True
             return openwhisk_result
-        
+        # This includes the success return code in the first line
+        if "ok" in parsed_response:
+            parsed_response = "\n".join(parsed_response.split("\n")[1:])
         return_content = json.loads(parsed_response)
         openwhisk_result.parse_benchmark_output(return_content)
         return openwhisk_result
     
     def openwhisk_nonblocking_invoke(self, payload: Dict) -> NonBlockingExecutionResult:
         command = self.nb_wsk_cmd + self.get_command(payload)
-        self.logging.info(f"Command is {' '.join(command)}")
         error = None
         try:
             begin = datetime.datetime.now()

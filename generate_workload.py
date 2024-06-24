@@ -1,3 +1,4 @@
+import sys
 import json
 
 schedule_config = {"functions": []}
@@ -7,7 +8,11 @@ with open("candidates_out_1_14.json", "r") as inf:
     
 ONE_SECOND = 1_000_000_000
 ONE_MINUTE = 60_000_000_000
-SCALE = 0.005
+
+if len(sys.argv) == 2:
+    SCALE = float(sys.argv[1])
+else:
+    SCALE = 0.001
 # DURATION = 1440
 DURATION = 1  # Fix to 5 minutes first
 

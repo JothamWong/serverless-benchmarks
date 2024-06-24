@@ -7,26 +7,25 @@ import traceback
 
 
 def sig_handler(signum, frame):
+    global start_time, end_time
     process.kill()
     if start_time is None or end_time is None:
         # This happens if no activations were observed
         start_time = time.time()
         end_time = time.time()
-    with open("experiment_aps.txt", "w") as outf:
-        outf.write(f"Start           : {start_time}\n")
-        outf.write(f"End             : {end_time}\n")
-        outf.write(f"Duration        : {end_time-start_time} seconds\n")
-        outf.write(f"Num activations : {num_activations}\n")
-        outf.write(f"Invocations/sec : {num_activations/(end_time-start_time)}/s\n")    
+    print(f"Start           : {start_time}")
+    print(f"End             : {end_time}")
+    print(f"Duration        : {end_time-start_time} seconds")
+    print(f"Num activations : {num_activations}")
+    print(f"Invocations/sec : {num_activations/(end_time-start_time)}/s")    
     exit()
 
+start_time = None
+end_time = None
 
 if __name__ == "__main__":
     command = ["wsk", "-i", "activation", "poll"]
-    start_time = None
-    end_time = None
     signal.signal(signal.SIGINT, sig_handler)
-    print("Monitoring activation polls...")
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -34,6 +33,7 @@ if __name__ == "__main__":
         text=True,
     )
     num_activations = 0
+    requests = {}
     try:
         while True:
             for line in process.stdout:

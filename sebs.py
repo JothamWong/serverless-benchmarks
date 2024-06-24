@@ -433,6 +433,9 @@ def run_schedule(
     time.sleep(2)
     # Collect results main loop, can now block until result is done
     # becos metrics are saved locally at the node itself
+    
+    # Keep track of failures
+    failures = {}
     collection_start = time.time_ns()
     for benchmark in triggers_m.keys():
         trigger = triggers_m[benchmark]["trigger"]
@@ -447,6 +450,7 @@ def run_schedule(
             ret = trigger.parse_nb_results(aid)
             if ret.stats.failure:
                 triggers_m[benchmark]["failure"] += 1
+                failures[ret.request_id] = ret.failureReason
             else:
                 triggers_m[benchmark]["success"] += 1
             result.add_invocation(func, ret.executionResult)
@@ -458,6 +462,9 @@ def run_schedule(
         sebs_client.logging.info("Save results to {}".format(os.path.abspath(result_file)))
 
     collection_end = time.time_ns()
+    
+    with open(os.path.join(result_dir, "experiments_scheduled_failure.json"), "w") as outf:
+        json.dump(failures, outf, indent=4)
     
     __analyze_schedule_results(
         triggers_m, 
@@ -542,7 +549,7 @@ def __analyze_schedule_results(
         num_cold = 0
         # If somehow not in _invocations
         if len(json_dict["_invocations"].keys()) == 0:
-            print(f"No invocations.")
+            print(f"No invocations for {benchmark}.")
             continue
         benchmarks.append(benchmark)
         # Will only have one invocations key

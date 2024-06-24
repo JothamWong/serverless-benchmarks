@@ -98,7 +98,10 @@ class LibraryTrigger(Trigger):
             self.logging.error("Invocation of {} failed!".format(self.fname))
             self.logging.error(error)
             openwhisk_result.stats.failure = True
+            openwhisk_result.executionResult.request_id = nb_result.request_id
+            openwhisk_result.failureReason = str(error)
             return openwhisk_result
+        
         # This includes the success return code in the first line
         if "ok" in parsed_response:
             parsed_response = "\n".join(parsed_response.split("\n")[1:])

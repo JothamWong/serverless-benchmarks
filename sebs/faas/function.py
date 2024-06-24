@@ -188,6 +188,7 @@ class OpenWhiskExecutionResult:
     # activation will skip initialization and this field will be -1.
     initTime: int
     executionResult: ExecutionResult
+    failureReason: str
     
     @property
     def stats(self):

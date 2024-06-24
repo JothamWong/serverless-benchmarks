@@ -607,18 +607,25 @@ def __analyze_schedule_results(
     invocation_delta = int((latest_invocation_end - earliest_invocation_start) / timedelta(seconds=1))
     result_f.write(f"Actual invocations/second: {successful_invocations / invocation_delta}\n")
     result_f.close()
-    
-    # Write to stacked bar chart
+    plot_function_breakdown(benchmarks,
+                            overall_queueing_latencies,
+                            overall_initialization_latencies,
+                            overall_execution_latencies,
+                            result_dir)  
+
+
+def plot_function_breakdown(
+    benchmarks,
+    overall_queueing_latencies,
+    overall_initialization_latencies,
+    overall_execution_latencies,
+    result_dir
+):
     bars = {
         "Queueing": np.array(overall_queueing_latencies),
         "Initialization": np.array(overall_initialization_latencies),
         "Execution": np.array(overall_execution_latencies)
     }
-    
-    print("SHAPES")
-    print(bars["Queueing"].shape)
-    print(bars["Initialization"].shape)
-    print(bars["Execution"].shape)
     
     fig, ax = plt.subplots()
     bottom = np.zeros(len(benchmarks))
@@ -632,6 +639,7 @@ def __analyze_schedule_results(
     fig.autofmt_xdate()
     plt.show()
     plt.savefig(os.path.join(result_dir, "results.png"), bbox_inches="tight", dpi=100)
+    
 
 
 @benchmark.command()

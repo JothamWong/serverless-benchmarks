@@ -56,6 +56,15 @@ start-deployment:
 	make start-kind
 	make deploy-whisk
 
+# This is needed because start-deployment doesnt guarantee that all components are fully init
+configure-deployment:
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --invocationsPerMinute 10000
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --concurrentInvocations 10000
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --firesPerMinute 10000
+
+verify-deployment:
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits get guest 
+
 restart-deployment:
 	make clear-cache
 	make tear-down-whisk

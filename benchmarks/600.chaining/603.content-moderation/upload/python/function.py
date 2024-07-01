@@ -21,6 +21,8 @@ def handler(event):
     key = event.get('object').get('key')
     download_path = '/tmp/{}-{}'.format(key, uuid.uuid4())
     
+    text_size = os.path.getsize(download_path)
+    
     s3_download_begin = datetime.datetime.now()
     client.download(bucket, os.path.join(input_prefix, key), download_path)
     s3_download_stop = datetime.datetime.now()
@@ -42,7 +44,8 @@ def handler(event):
         'result': {
             'bucket_name': bucket_name,
             'download_path': download_path,
-            'txt_key': key_name
+            'txt_key': key_name,
+            "text_size": text_size
         },
         'measurement': {
             'initial_download_time': download_time,

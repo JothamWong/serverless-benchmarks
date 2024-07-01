@@ -1,10 +1,20 @@
 SHELL := /bin/bash
 MINIO-URL=10.90.36.41
 
+gen-candidates:
+	python3 generate_candidates.py
+
+gen-schedule:
+	python3 generate_workload.py
+
+schedule:
+	make clear-cache
+	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --output-dir tmpscheduled
+
 # Simple check if can run a simple benchmark
 test:
 	make clear-cache
-	python3 sebs.py benchmark invoke 110.dynamic-html test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 5
+	python3 sebs.py benchmark invoke 110.dynamic-html test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 5 --trigger library
 
 test-chain:
 	make clear-cache
@@ -45,6 +55,15 @@ start-deployment:
 	make clear-cache
 	make start-kind
 	make deploy-whisk
+
+# This is needed because start-deployment doesnt guarantee that all components are fully init
+configure-deployment:
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --invocationsPerMinute 10000
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --concurrentInvocations 10000
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --firesPerMinute 10000
+
+verify-deployment:
+	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits get guest 
 
 restart-deployment:
 	make clear-cache

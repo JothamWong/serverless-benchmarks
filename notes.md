@@ -1,5 +1,35 @@
 # Some stuff to note
 
+## Handling large requests
+
+The default configuration for default deployment is insufficient for azure trace scale workload.
+The following things need to be done:
+
+https://github.com/apache/openwhisk/blob/master/docs/intra-concurrency.md
+
+Firstly, invoker has a limit on max number of container instances (n) running at one time.
+Handling > n requests entails buffering requests in memory. So you need to increase the JVM
+heap size to handle larger workloads. (See known-issues)
+
+We will also need to create additional invoker instances.
+Invokers are the openwhisk components that actually execute said function by spinning up a docker container. This is done in `mycluster.yaml`, as seen in https://github.com/apache/openwhisk-deploy-kube/blob/master/docs/configurationChoices.md.
+
+scale=1 is too much at the moment, definitely need to scale down
+
+TODO:
+1. Figure out how to improve async invocation for OpenWhisk
+2. Add more metrics
+  1. execution only (already handled) start->func->end
+  2. end-to-end (starting from invocation request to actual request finish (?), not really possible)
+  3. queueing latency
+  4. actual requests/sec served
+
+## configuration
+
+- `actionsInvokesPerminute`: limits max number of invocations per minute
+- `actionsInvokesConcurrent`: limits max number of concurrent invocations
+- `containerPool`: total memory available per `invoker` instance. `Invoker` uses this memory to create containers for user-actions. The concurrency limits will depend upon the total memory configured for `containerPool` and memory allocated per action (`default`: 256mb per container).
+
 ## pip changes
 urllib3<2
 types-requests<2.31.0.7

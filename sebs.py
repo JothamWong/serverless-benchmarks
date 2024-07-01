@@ -4,16 +4,32 @@ import functools
 import os
 import traceback
 from typing import cast, Optional
+from datetime import datetime, timedelta
+import time
+import subprocess
+import sys
+import signal
+import shutil
+import matplotlib.pyplot as plt
+
+from dataclasses import dataclass
+from tqdm import tqdm
+import numpy as np
+
+from multiprocessing.pool import ThreadPool
 
 import click
 
 import sebs
 from sebs import SeBS
+import sebs.experiments
 from sebs.types import Storage as StorageTypes
 from sebs.regression import regression_suite
 from sebs.utils import update_nested_dict, catch_interrupt
 from sebs.faas import System as FaaSSystem
 from sebs.faas.function import Trigger
+import sebs.utils
+
 
 PROJECT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -257,6 +273,7 @@ def invoke(
         trigger = triggers[0]
     for i in range(repetitions):
         sebs_client.logging.info(f"Beginning repetition {i+1}/{repetitions}")
+        print(f"{input_config=}")
         ret = trigger.sync_invoke(input_config)
         if ret.stats.failure:
             sebs_client.logging.info(f"Failure on repetition {i+1}/{repetitions}")
@@ -270,6 +287,366 @@ def invoke(
     with open(result_file, "w") as out_f:
         out_f.write(sebs.utils.serialize(result))
     sebs_client.logging.info("Save results to {}".format(os.path.abspath(result_file)))
+    
+"""
+Schedule invocations with a json file of the format:
+{
+  "functions": [
+    {
+      "name": "benchmark-name",
+      "invocations": [
+        {
+          "timestamp": "2024-06-18T10:30:00Z"
+        },
+        {
+          "timestamp": "2024-06-18T14:00:00Z"
+        }
+      ]
+    },
+}
+"""
+@cli.group()
+def schedule():
+    pass
+
+"""Force usage of library. Exposing action as http prevents simple non-blocking usage"""
+@schedule.command()
+@click.option("--schedule_config", type=str, default="schedule.json", help="path to schedule")
+@click.option(
+    "--trigger_t",
+    type=click.Choice(["library"]),
+    default="library",
+    help="Function trigger to be used.",
+)
+@click.option(
+    "--memory",
+    default=None,
+    type=int,
+    help="Override default memory settings for the benchmark function.",
+)
+@click.option(
+    "--timeout",
+    default=None,
+    type=int,
+    help="Override default timeout settings for the benchmark function.",
+)
+@click.option(
+    "--result_dir",
+    default="schedule-results",
+    type=str,
+    help="Results directory"
+)
+@common_params
+def run_schedule(
+    schedule_config,
+    trigger_t,
+    memory,
+    timeout,
+    result_dir,
+    **kwargs,
+):
+    (
+        config,
+        output_dir,
+        logging_filename,
+        sebs_client,
+        deployment_client,
+    ) = parse_common_params(**kwargs)
+    
+    experiment_config = sebs_client.get_experiment_config(config["experiments"])
+    with open(schedule_config, "r") as fp:
+        schedule_config = json.load(fp)
+    schedule_config = sebs_client.get_schedule_config(schedule_config)
+
+    if os.path.exists(result_dir):
+        shutil.rmtree(result_dir)
+    os.mkdir(result_dir)
+
+    # Loop and set up each benchmark trigger
+    triggers_m = {}
+    for benchmark in schedule_config.fns:
+        update_nested_dict(config, ["experiments", "benchmark"], benchmark)
+        benchmark_obj = sebs_client.get_benchmark(
+            benchmark,
+            deployment_client,
+            experiment_config,
+            logging_filename=logging_filename
+        )
+        # TODO: Make this better
+        if memory is not None:
+            benchmark_obj.benchmark_config.memory = memory
+        if timeout is not None:
+            benchmark_obj.benchmark_config.timeout = timeout
+
+        func = deployment_client.get_function(
+            benchmark_obj,
+            deployment_client.default_function_name(benchmark_obj),
+        )
+        storage = deployment_client.get_storage(replace_existing=experiment_config.update_storage)
+        # TODO: Make this individual
+        input_config = benchmark_obj.prepare_input(storage=storage, size="small")
+        
+        result = sebs.experiments.ExperimentResult(experiment_config, deployment_client.config)
+        result.begin()
+        
+        trigger_type = Trigger.TriggerType.get(trigger_t)
+        triggers = func.triggers(trigger_type)
+        if len(triggers) == 0:
+            trigger = deployment_client.create_trigger(func, trigger_type)
+        else:
+            trigger = triggers[0]
+        print(f"{benchmark=}")
+        triggers_m[benchmark] = {}
+        triggers_m[benchmark]["trigger"] = trigger
+        triggers_m[benchmark]["function"] = func
+        triggers_m[benchmark]["input"] = input_config
+        triggers_m[benchmark]["result"] = result
+        triggers_m[benchmark]["activation_ids"] = []
+        triggers_m[benchmark]["success"] = 0
+        triggers_m[benchmark]["failure"] = 0
+    
+    # Scheduling main loop
+    invocation_start = time.time_ns()
+    for so in schedule_config.schedule:
+        now = time.time_ns()
+        scheduled_time = invocation_start + so.timestamp  # in nanoseconds
+        if scheduled_time > now:
+            delta_s = (scheduled_time - now) / 1_000_000_000
+            # sebs_client.logging.info(f"Sleeping for {delta_s} seconds")
+            time.sleep(delta_s)
+
+        sebs_client.logging.info(f"Invoking {so.fn_name} at {scheduled_time}")
+        trigger = triggers_m[so.fn_name]["trigger"] 
+        input_config = triggers_m[so.fn_name]["input"]
+        aids = triggers_m[so.fn_name]["activation_ids"]
+        
+        ret = trigger.openwhisk_nonblocking_invoke(input_config)
+        # Store request time here
+        if "request_time" not in triggers_m[so.fn_name].keys():
+            triggers_m[so.fn_name]["request_time"] = {}
+        if not ret.failure:
+            triggers_m[so.fn_name]["request_time"][ret.request_id] = scheduled_time
+        aids.append(ret)
+    # End of actual invocation duration, most likely will not be DURATION
+    invocation_end = time.time_ns()
+
+    time.sleep(2)
+    # Collect results main loop, can now block until result is done
+    # becos metrics are saved locally at the node itself
+    
+    # Keep track of failures
+    failures = {}
+    collection_start = time.time_ns()
+    for benchmark in triggers_m.keys():
+        trigger = triggers_m[benchmark]["trigger"]
+        func = triggers_m[benchmark]["function"]
+        result = triggers_m[benchmark]["result"]
+        for aid in triggers_m[benchmark]["activation_ids"]:
+            if aid.request_id == "":
+                # Means that invocation attempt itself wasnt even successful
+                triggers_m[benchmark]["failure"] += 1
+                continue
+            
+            ret = trigger.parse_nb_results(aid)
+            if ret.stats.failure:
+                triggers_m[benchmark]["failure"] += 1
+                failures[ret.request_id] = ret.failureReason
+            else:
+                triggers_m[benchmark]["success"] += 1
+            result.add_invocation(func, ret.executionResult)
+        result.end()
+        # Save separately
+        result_file = os.path.join(result_dir, f"experiments_scheduled_{benchmark}.json")
+        with open(result_file, "w") as out_f:
+            out_f.write(sebs.utils.serialize(result))
+        sebs_client.logging.info("Save results to {}".format(os.path.abspath(result_file)))
+
+    collection_end = time.time_ns()
+    
+    with open(os.path.join(result_dir, "experiments_scheduled_failure.json"), "w") as outf:
+        json.dump(failures, outf, indent=4)
+    
+    __analyze_schedule_results(
+        triggers_m, 
+        result_dir,
+        invocation_start,
+        invocation_end,
+        collection_start,
+        collection_end)
+    
+def __convert_str_to_timestamp(ts: str):
+    seconds, microseconds = ts.split(".")
+    seconds = int(seconds)
+    microseconds = int(float('0.' + microseconds) * 1e6)
+    dt = datetime.fromtimestamp(seconds)
+    dt = dt + timedelta(microseconds=microseconds)
+    return dt
+
+def __convert_unix_to_timestamp(ts: int):
+    # originally in nanosecond precision
+    seconds = ts // 1e9
+    nanoseconds = ts % 1e9
+    microseconds = nanoseconds // 1e3
+    dt = datetime.fromtimestamp(seconds)
+    dt = dt + timedelta(microseconds=microseconds)
+    return dt
+    
+    
+def __analyze_schedule_results(
+    triggers_m: dict, 
+    result_dir: str,
+    invocation_start: int,
+    invocation_end: int,
+    collection_start: int,
+    collection_end: int,
+    ):
+    """Calculates the following metrics
+    From the main schedule script, we obtained the following metrics:
+    1. actual scheduled duration
+
+    We are interested in the following metrics
+    1. 
+
+    Func request -> queued -> Func invocation
+
+    """
+    result_f = open(os.path.join(result_dir, "results_log.txt"), "w")
+    # Actual scheduling
+    result_f.write("Done with schedule experiment\n")
+    result_f.write(f"Start =  {invocation_start}\n")
+    result_f.write(f"End   =  {invocation_end}\n")
+    result_f.write(f"Actual scheduled duration was {(invocation_end-invocation_start)/1_000_000_000} seconds.\n")
+    # Actual collection
+    result_f.write(f"Started collecting data at {collection_start}\n")
+    result_f.write(f"Done collecting data at    {collection_end}\n")
+    
+    # Obtain actual invocation per second for experiment
+    earliest_invocation_start = None
+    latest_invocation_end = None
+    successful_invocations = 0
+    
+    # Overall metrics for plotting stacked bar chart
+    benchmarks = []
+    overall_queueing_latencies = []
+    overall_initialization_latencies = []
+    overall_execution_latencies = []
+    
+    # Benchmark specific metric
+    for benchmark in triggers_m.keys():
+        with open(os.path.join(result_dir, f"experiments_scheduled_{benchmark}.json")) as outf:
+            json_dict = json.load(outf)
+        result_f.write("***********************************************\n")
+        result_f.write(f"Statistics for {benchmark}\n")
+        result_f.write(f"{triggers_m[benchmark]['success']} successes\n")
+        result_f.write(f"{triggers_m[benchmark]['failure']} failures\n")
+        successful_invocations += triggers_m[benchmark]['success']
+        
+        queueing_latencies = []  # in milliseconds
+        initialization_latencies = []  # in milliseconds
+        function_execution_durations = []  # in milliseconds
+        end_to_end_latencies = []  # in milliseconds
+        num_warm = 0
+        num_cold = 0
+        # If somehow not in _invocations
+        if len(json_dict["_invocations"].keys()) == 0:
+            print(f"No invocations for {benchmark}.")
+            continue
+        benchmarks.append(benchmark)
+        # Will only have one invocations key
+        invocation_key = list(json_dict["_invocations"].keys())[0]
+        
+        for key in json_dict["_invocations"][invocation_key].keys():
+            sub_result = json_dict["_invocations"][invocation_key][key]
+            if "request_id" not in sub_result["output"].keys():
+                print(f"Ignoring failure w/o request id")
+                continue
+            times = sub_result["times"]
+            
+            queueing_latency = times["waitTime"]
+            init_time = 0
+            
+            queueing_latencies.append(queueing_latency)
+            
+            if "initTime" in times:
+                init_time = times["initTime"]
+                num_cold += 1
+            else:
+                num_warm += 1
+            initialization_latencies.append(init_time)
+            
+            # Both are in string
+            invocation_began = __convert_str_to_timestamp(sub_result["output"]["begin"])
+            invocation_end = __convert_str_to_timestamp(sub_result["output"]["end"])
+            
+            if earliest_invocation_start is None or invocation_began < earliest_invocation_start:
+                earliest_invocation_start = invocation_began
+            if latest_invocation_end is None or invocation_end > latest_invocation_end:
+                latest_invocation_end = invocation_end
+                
+            function_duration = int((invocation_end - invocation_began) / timedelta(milliseconds=1))
+            function_execution_durations.append(function_duration)
+            
+            end_to_end_latency = queueing_latency + init_time + function_duration
+            end_to_end_latencies.append(end_to_end_latency)
+            
+        
+        queueing_latencies = np.array(queueing_latencies)
+        initialization_latencies = np.array(initialization_latencies)
+        function_execution_durations = np.array(function_execution_durations)
+        end_to_end_latencies = np.array(end_to_end_latencies)
+        result_f.write(f"Average queueing latency: {np.mean(queueing_latencies)}\n")
+        result_f.write(f"Average initialization latency: {np.mean(initialization_latencies)}\n")
+        result_f.write(f"Average function execution: {np.mean(function_execution_durations)}\n")
+        result_f.write(f"Num warm: {num_warm}\n")
+        result_f.write(f"Num cold: {num_cold}\n")
+        result_f.write(f"End to end latency: {np.mean(end_to_end_latencies)}\n")
+        result_f.write("***********************************************\n")
+        
+        overall_queueing_latencies.append(np.mean(queueing_latencies))
+        overall_initialization_latencies.append(np.mean(initialization_latencies))
+        overall_execution_latencies.append(np.mean(function_execution_durations))
+        
+
+    # Actual requests/sec
+    result_f.write(f"Actual invocation start: {earliest_invocation_start}\n")
+    result_f.write(f"Actual invocation end: {latest_invocation_end}\n")
+    result_f.write(f"Num successful invocations {successful_invocations}\n")
+    invocation_delta = int((latest_invocation_end - earliest_invocation_start) / timedelta(seconds=1))
+    result_f.write(f"Actual invocations/second: {successful_invocations / invocation_delta}\n")
+    result_f.close()
+    plot_function_breakdown(benchmarks,
+                            overall_queueing_latencies,
+                            overall_initialization_latencies,
+                            overall_execution_latencies,
+                            result_dir)  
+
+
+def plot_function_breakdown(
+    benchmarks,
+    overall_queueing_latencies,
+    overall_initialization_latencies,
+    overall_execution_latencies,
+    result_dir
+):
+    bars = {
+        "Queueing": np.array(overall_queueing_latencies),
+        "Initialization": np.array(overall_initialization_latencies),
+        "Execution": np.array(overall_execution_latencies)
+    }
+    
+    fig, ax = plt.subplots()
+    bottom = np.zeros(len(benchmarks))
+    width = 0.5
+    for label, times in bars.items():
+        p = ax.bar(benchmarks, times, width, label=label, bottom=bottom)
+        bottom += times
+    ax.set_title("Timing breakdown per benchmark")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    fig.autofmt_xdate()
+    plt.show()
+    plt.savefig(os.path.join(result_dir, "results.png"), bbox_inches="tight", dpi=100)
+    
 
 
 @benchmark.command()

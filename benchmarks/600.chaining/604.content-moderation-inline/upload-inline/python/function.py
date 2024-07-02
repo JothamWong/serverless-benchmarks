@@ -2,6 +2,7 @@ from minio import Minio
 import uuid
 import os
 import datetime
+import random
 
 from . import storage
 client = storage.storage.get_instance()
@@ -17,9 +18,10 @@ def parse_directory(directory):
 def handler(event):
     bucket = event.get('bucket').get('bucket')
     input_prefix = event.get('bucket').get('input')
-    key = event.get('object').get('key')
+    num_files = event.get('object').get('num_files')
+    key = random.randint(0, num_files-1)
     download_path = '/tmp/{}-{}'.format(key, uuid.uuid4())
-    
+    key = str(key) + ".txt"
     
     s3_download_begin = datetime.datetime.now()
     client.download(bucket, os.path.join(input_prefix, key), download_path)
@@ -34,9 +36,9 @@ def handler(event):
     return {
         'result': {
             'txt': text,
-            "text_size": text_size
         },
         'measurement': {
             'initial_download_time': download_time,
+            "text_size": text_size
         }
     }

@@ -18,7 +18,7 @@ def handler(event):
     s3_download_end = datetime.datetime.now()
     
     nltk_download_begin = datetime.datetime.now()
-    nltk.download('vader_lexicon')
+    nltk.download('vader_lexicon')  
     nltk_download_end = datetime.datetime.now()
     
     with open(download_path, "r") as f:

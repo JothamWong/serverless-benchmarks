@@ -13,13 +13,14 @@ def buckets_count():
     :param upload_func: upload function taking three params(bucket_idx, key, filepath)
 '''
 def generate_input(data_dir, size, benchmarks_bucket, input_paths, output_paths, upload_func):
+    num_files = 0
     for file in glob.glob(os.path.join(data_dir, '*.txt')):
         txt = os.path.relpath(file, data_dir)
-        upload_func(0, txt, file)
+        upload_func(0, str(num_files) + ".txt", file)
+        num_files += 1
     input_config = {'object': {}, 'bucket': {}}
-    input_config['object']['key'] = txt
+    input_config['object']['num_files'] = num_files
     input_config['bucket']['bucket'] = benchmarks_bucket
     input_config['bucket']['input'] = input_paths[0]
     input_config['bucket']['output'] = output_paths [0]
-    print(input_config)
     return input_config

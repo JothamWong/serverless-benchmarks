@@ -15,4 +15,3 @@ if [ ! -z "$CMD" ]; then
 fi
 
 exec gosu ${USER} "$@"
-

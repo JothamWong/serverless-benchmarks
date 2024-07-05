@@ -5,6 +5,8 @@ import argparse
 import random
 from collections import defaultdict
 
+ONE_SECOND = 1_000_000_000
+
 parser = argparse.ArgumentParser("Generate Inter-arrival-times (IATs) schedule")
 parser.add_argument("-l", "--lambda_rate", default=4, type=int, help="Lambda rate for poisson per minute")
 parser.add_argument("-d", "--duration", default=1, type=int, help="Duration of schedule in minutes")
@@ -43,20 +45,28 @@ def generate_poisson_workload(lambda_rate, duration_minutes, out_file: str):
     start_time = datetime.fromtimestamp(0)
     inter_arrival_times = np.random.exponential(1 / lambda_rate, size=lambda_rate*duration_minutes)
     
-    schedule = []
     current_time = start_time
     
     raw_counts = defaultdict(int)
-    
+    schedule_config = {"functions": []}
+    fn_dicts = {}
+        
     for interval in inter_arrival_times:
         current_time += timedelta(minutes=interval)
         event = sample_candidate()
-        schedule.append((current_time.timestamp(), event))
+        
+        if event not in fn_dicts:
+            fn_sub_dict = {"name": event, "invocations": []}
+            fn_dicts[event] = fn_sub_dict
+        
+        fn_dicts[event]["invocations"].append(current_time.timestamp() * ONE_SECOND)
         raw_counts[event] += 1
     
+    for fn_sub_dict in fn_dicts.values():
+        schedule_config["functions"].append(fn_sub_dict)
+    
     with open(out_file, "w") as outf:
-        for e in schedule:
-            outf.write(f"{e[0]} {e[1]}\n")
+        json.dump(schedule_config, outf, indent=4)
             
     max_width = max(len(fn_name) for fn_name in raw_counts.keys()) + 1
     print("*" * 20)

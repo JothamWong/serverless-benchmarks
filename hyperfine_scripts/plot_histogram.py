@@ -54,7 +54,7 @@ plt.hist(
     histtype=histtype,
     range=(t_min, t_max),
 )
-plt.legend(prop={"family": ["Source Code Pro", "Fira Mono", "Courier New"]})
+# plt.legend(prop={"family": ["Source Code Pro", "Fira Mono", "Courier New"]})
 
 plt.xlabel("Time [s]")
 if args.title:

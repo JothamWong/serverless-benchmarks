@@ -27,7 +27,7 @@ wrk:
 
 # Simple check if can run a simple benchmark
 test:
-	python3 sebs.py benchmark invoke 411.image-recognition test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 100000 --trigger library
+	python3 sebs.py benchmark invoke 411.image-recognition test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 10 --trigger library
 
 test-2:
 	python3 sebs.py benchmark invoke 120.uploader test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 1000 --trigger library
@@ -106,6 +106,16 @@ configure-deployment:
 	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --invocationsPerMinute 10000
 	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --concurrentInvocations 10000
 	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits set guest --firesPerMinute 10000
+
+configure-wsk-admin:
+	$(OPENWHISK)/tools/admin/wskadmin limits set default --invocationsPerMinute 999999999999
+	$(OPENWHISK)/tools/admin/wskadmin limits set guest --invocationsPerMinute 999999999999
+	$(OPENWHISK)/tools/admin/wskadmin limits set default --firesPerMinute 999999999999
+	$(OPENWHISK)/tools/admin/wskadmin limits set guest --firesPerMinute 999999999999
+	$(OPENWHISK)/tools/admin/wskadmin limits set default --concurrentInvocations 999999999999
+	$(OPENWHISK)/tools/admin/wskadmin limits set guest --concurrentInvocations 999999999999
+	$(OPENWHISK)/tools/admin/wskadmin limits set default --maxActionConcurrency 999999999999
+	$(OPENWHISK)/tools/admin/wskadmin limits set guest --maxActionConcurrency 999999999999
 
 verify-deployment:
 	kubectl -n openwhisk  -ti exec owdev-wskadmin -- wskadmin limits get guest 

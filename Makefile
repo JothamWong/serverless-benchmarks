@@ -1,5 +1,7 @@
 SHELL := /bin/bash
 MINIO-URL=10.90.36.41
+OPENWHISK=/mnt/sdb/home/Jotham/openwhisk
+API := $(shell cat /mnt/sdb/home/Jotham/openwhisk/ansible/files/auth.guest)
 
 gen-candidates:
 	python3 generate_candidates.py
@@ -19,10 +21,13 @@ schedule-1024:
 	make clear-cache
 	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --output-dir tmpscheduled --memory 1024 --result_dir mem1024
 
+wrk:
+	bash $(OPENWHISK)/tests/performance/wrk_tests/throughput.sh https://172.17.0.1 $(API) $(OPENWHISK)/tests/performance/preparation/actions/noop.js 100 110 2 1s
+
 
 # Simple check if can run a simple benchmark
 test:
-	python3 sebs.py benchmark invoke 110.dynamic-html test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 100000 --trigger library
+	python3 sebs.py benchmark invoke 411.image-recognition test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 100000 --trigger library
 
 test-2:
 	python3 sebs.py benchmark invoke 120.uploader test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 1000 --trigger library

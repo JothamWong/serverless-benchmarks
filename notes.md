@@ -1,5 +1,20 @@
 # Some stuff to note
 
+## Using elastic search
+
+So when using elastic search as the activation store using the ansible approach, one thing that can happen is an erronous activation id does not exist, even though it should. As it turns out, elasticsearch has some tolerance settings for how much data it can store.
+
+Accordingly, https://stackoverflow.com/questions/33369955/low-disk-watermark-exceeded-on
+
+The solution would be to turn off these thresholds.
+
+```bash
+curl -XPUT -H "Content-Type: application/json" http://localhost:9200/_cluster/settings -d '{ "transient": { "cluster.routing.allocation.disk.threshold_enabled": false } }'
+
+
+curl -XPUT -H "Content-Type: application/json" http://localhost:9200/_all/_settings -d '{"index.blocks.read_only_allow_delete": null}'
+```
+
 ## Handling large requests
 
 The default configuration for default deployment is insufficient for azure trace scale workload.
@@ -23,6 +38,25 @@ TODO:
   2. end-to-end (starting from invocation request to actual request finish (?), not really possible)
   3. queueing latency
   4. actual requests/sec served
+
+## Openwhisk annotation
+
+https://github.com/apache/openwhisk/blob/master/docs/annotations.md
+waitTime: the time spent waiting in the internal OpenWhisk system. This is roughly the time spent between the controller receiving the activation request and when the invoker provisioned a container for the action.
+
+## Possible errors
+
+```
+{
+    "begin": "1718982121.479089",
+    "end": "1718982133.660883",
+    "request_id": "0b41ddfd4cf949df81ddfd4cf9b9df75",
+    "result": "Error - invocation failed! Reason: HTTPConnectionPool(host='10.90.36.41', port=9011): Max retries exceeded with url: /sebs-benchmarks-16fda0a0/210.thumbnailer-0-output/5_asphalt-atmosphere-cloudy-sky-2739010.e255cbf2.jpg (Caused by ReadTimeoutError(\"HTTPConnectionPool(host='10.90.36.41', port=9011): Read timed out. (read timeout=1)\"))",
+    "results_time": 12181794.0
+}
+```
+
+Unsure why this really happens. Is there a rate limiter on minio itself?
 
 ## configuration
 

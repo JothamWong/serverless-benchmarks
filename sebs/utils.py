@@ -147,11 +147,14 @@ def configure_logging():
 
 def find_benchmark(benchmark: str, path: str):
     benchmarks_dir = os.path.join(PROJECT_DIR, path)
+    print("Benchmarks_dir is " + benchmarks_dir)
+    print(f"Benchmark is {benchmark}")
     # Check if have slash ==> sequence
     if "/" in benchmark:
         benchmark_path = find_sequence(benchmark, benchmarks_dir)
     else:
         benchmark_path = find(benchmark, benchmarks_dir)
+    print(f"{benchmark_path=}")
     return benchmark_path
 
 

@@ -1,5 +1,20 @@
 # Some stuff to note
 
+## If things break
+
+Specifically if activations don't show up, almost guaranteed elasticsearch ran outta space.
+
+run `docker logs elasticsearch0` to verify
+
+If it says errors, need to clear the data and redeploy.
+tbh idk if clearing the indices is sufficient, but i currently clear indices
+and then redeploy the ansible component and it works like a charm
+
+kill it with `curl -X DELETE 'http://localhost:9200/_all'`
+
+another source of issue is the minio instance taking up too much space
+kill the minio container, docker system prune, spin it up again, and edit the system.json file.
+
 ## Using elastic search
 
 So when using elastic search as the activation store using the ansible approach, one thing that can happen is an erronous activation id does not exist, even though it should. As it turns out, elasticsearch has some tolerance settings for how much data it can store.

@@ -283,7 +283,7 @@ def invoke(
         result.add_invocation(func, ret)
     result.end()
 
-    result_file = os.path.join(output_dir, "experiments.json")
+    result_file = os.path.join(output_dir, f"{benchmark}_experiments.json")
     with open(result_file, "w") as out_f:
         out_f.write(sebs.utils.serialize(result))
     sebs_client.logging.info("Save results to {}".format(os.path.abspath(result_file)))
@@ -524,6 +524,7 @@ def __analyze_schedule_results(
     earliest_invocation_start = None
     latest_invocation_end = None
     successful_invocations = 0
+    failed_invocations = 0
     
     # Overall metrics for plotting stacked bar chart
     benchmarks = []
@@ -540,6 +541,7 @@ def __analyze_schedule_results(
         result_f.write(f"{triggers_m[benchmark]['success']} successes\n")
         result_f.write(f"{triggers_m[benchmark]['failure']} failures\n")
         successful_invocations += triggers_m[benchmark]['success']
+        failed_invocations += triggers_m[benchmark]['failure']
         
         queueing_latencies = []  # in milliseconds
         initialization_latencies = []  # in milliseconds
@@ -610,7 +612,16 @@ def __analyze_schedule_results(
     # Actual requests/sec
     result_f.write(f"Actual invocation start: {earliest_invocation_start}\n")
     result_f.write(f"Actual invocation end: {latest_invocation_end}\n")
+    
+    total = successful_invocations + failed_invocations
+    percent_succ = float(successful_invocations/total * 100)
+    percent_fail = float(failed_invocations/total * 100)
+    
     result_f.write(f"Num successful invocations {successful_invocations}\n")
+    result_f.write(f"% successful invocations {percent_succ:.3f}\n")
+    result_f.write(f"Num failed invocations {failed_invocations}\n")
+    result_f.write(f"% failed invocations {percent_fail:.3f}\n")
+    
     invocation_delta = int((latest_invocation_end - earliest_invocation_start) / timedelta(seconds=1))
     result_f.write(f"Actual invocations/second: {successful_invocations / invocation_delta}\n")
     result_f.close()

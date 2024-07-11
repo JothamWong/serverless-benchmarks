@@ -73,6 +73,7 @@ class LibraryTrigger(Trigger):
                 end = datetime.datetime.now()
                 parsed_response = response.stdout.decode("utf-8")
                 # This means that the activation was queued but did not finish
+                # From here, it is possible for it to timeout after 300 seconds
                 if 'error: Unable to get result' in parsed_response or parsed_response == "":
                     # Busy poll
                     time.sleep(0.125)

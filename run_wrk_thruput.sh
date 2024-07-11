@@ -19,7 +19,7 @@ run_throughput_test() {
 
 mkdir -p "$OUTPUT_DIR"
 
-run_throughput_test 48 110 48 5s
-# run_throughput_test 96 110 48 30s
-# run_throughput_test 144 110 48 30s
-# run_throughput_test 192 110 48 30s
+run_throughput_test 48 110 48 30s
+run_throughput_test 96 110 48 30s
+run_throughput_test 144 110 48 30s
+run_throughput_test 192 110 48 30s

@@ -34,6 +34,11 @@ threads=${5:-4}
 # How long to run the test
 duration=${6:-30s}
 
+echo "Concurrency is $concurrency"
+echo "Action concurrency is $action_concurrency"
+echo "Threads is $threads"
+echo "Duration is $duration"
+
 # run throughput tests
 encodedAuth=$(echo "$credentials" | tr -d '\n' | base64 | tr -d '\n')
 docker run --pid=host --userns=host --rm -v "$currentDir":/data williamyeh/wrk \

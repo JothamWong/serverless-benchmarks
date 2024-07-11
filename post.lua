@@ -14,6 +14,10 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 --
+
+-- NOTE:
+-- at the moment: the sebs_benchmark bucket needs to be manually inputted
+-- retrieve it by running `make test` and scanning the command output
 wrk.method = "POST"
 wrk.headers["Content-Type"] = "application/json"
-wrk.body = '{\"object\":{\"model\": \"resnet50-19c8e357.pth\", \"input\": \"800px-Porsche_991_silver_IAA.jpg\"}, \"bucket\": {\"bucket\": \"sebs-benchmarks-9594b98e\", \"input\": \"411.image-recognition-1-input\", \"model\": \"411.image-recognition-0-input\"}}'
+wrk.body = '{\"object\":{\"model\": \"resnet50-19c8e357.pth\", \"input\": \"800px-Porsche_991_silver_IAA.jpg\"}, \"bucket\": {\"bucket\": \"sebs-benchmarks-07b9e14c\", \"input\": \"411.image-recognition-1-input\", \"model\": \"411.image-recognition-0-input\"}}'

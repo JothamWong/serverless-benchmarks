@@ -3,6 +3,10 @@ MINIO-URL=10.90.36.41
 OPENWHISK=/mnt/sdb/home/Jotham/openwhisk
 API := $(shell cat /mnt/sdb/home/Jotham/openwhisk/ansible/files/auth.guest)
 
+open-close:
+	make clear-cache
+	python3 sebs.py open-close open-close --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --n_workers 10 --output-dir tmpscheduled --result_dir open_close
+
 gen-candidates:
 	python3 generate_candidates.py
 

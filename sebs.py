@@ -3,7 +3,7 @@ import logging
 import functools
 import os
 import traceback
-from typing import cast, Optional
+from typing import cast, Optional, List
 from datetime import datetime, timedelta
 import time
 import subprocess
@@ -12,6 +12,7 @@ import signal
 import shutil
 import matplotlib.pyplot as plt
 
+from multiprocessing import Process, Queue
 from dataclasses import dataclass
 from tqdm import tqdm
 import numpy as np
@@ -23,6 +24,7 @@ import click
 import sebs
 from sebs import SeBS
 import sebs.experiments
+from sebs.experiments.schedule import ScheduleObject, ScheduleConfig
 from sebs.types import Storage as StorageTypes
 from sebs.regression import regression_suite
 from sebs.utils import update_nested_dict, catch_interrupt
@@ -309,7 +311,10 @@ Schedule invocations with a json file of the format:
 def schedule():
     pass
 
-"""Force usage of library. Exposing action as http prevents simple non-blocking usage"""
+"""
+Schedule is an open-loop benchmarking. Many failures due to system overload.
+Force usage of library. Exposing action as http prevents simple non-blocking usage
+"""
 @schedule.command()
 @click.option("--schedule_config", type=str, default="schedule.json", help="path to schedule")
 @click.option(
@@ -657,7 +662,243 @@ def plot_function_breakdown(
     fig.autofmt_xdate()
     plt.show()
     plt.savefig(os.path.join(result_dir, "results.png"), bbox_inches="tight", dpi=100)
+
+def _split_schedule(n: int, root_schedule: ScheduleConfig):
+    """
+    Split the schedule into n workers
+    We use a simple round robin distribution to distribute the schedule uniformly.
+    This could be changed to some more sophisticated distribution
+    """
+    schedules = [[] for _ in range(n)]
+    for i, so in enumerate(root_schedule.schedule):
+        idx = i % n
+        schedules[idx].append(so)
+    return schedules
+
+def worker_thread(idx: int, triggers: dict, schedule: List[ScheduleObject], queue: Queue):
+    """Closed loop worker thread with latency correction"""
+    # Scheduling worker loop
+    invocation_start = time.time_ns()
+    counters = {}  # dict of success/failure counter
+    rets = {}  # dict of ExecutionResult
+    for fn_name in triggers.keys():
+        counters[fn_name] = {
+            "success": 0,
+            "failure": 0
+        }
+        rets[fn_name] = []
+    for i, so in enumerate(schedule):
+        now = time.time_ns()
+        scheduled_time = invocation_start + so.timestamp
+        waiting_time = 0
+        if scheduled_time > now:
+            # We are on track, so sleep until desired time
+            delta_s = (scheduled_time - now) / 1_000_000_000
+            time.sleep(delta_s)
+        else:
+            # scheduled_time <= now
+            # We are behind, so we need to account that in our latency
+            waiting_time = now - scheduled_time
+        trigger = triggers[so.fn_name]["trigger"]
+        input_config = triggers[so.fn_name]["input"]
+        
+        ret = trigger.sync_invoke(input_config)
+        try:
+            if ret.stats.failure:
+                counters[so.fn_name]["failure"] += 1
+            else:
+                ret.times.waitTime = waiting_time
+                counters[so.fn_name]["success"] += 1
+        except KeyError as e:
+            print(f"key error with {so.fn_name}")
+            print("All keys are ")
+            for key in counters.keys():
+                print(key)
+        rets[so.fn_name].append(ret)
+    print(f"Worker {idx} is done with schedule.")
+    invocation_end = time.time_ns()
+    return_dict = {
+        "ret": rets,
+        "counter": counters,
+        "worker_start": invocation_start,
+        "worker_end": invocation_end,
+    }
+    queue.put(return_dict)
+
+
+@cli.group()
+def open_close():
+    pass
+
+"""
+Run an open-closed workload.
+Workers == threads that send invocation requests to Openwhisk
+"""
+@open_close.command()
+@click.option(
+    "--schedule_config", 
+    type=str, 
+    default="schedule.json", 
+    help="path to schedule"
+)
+@click.option(
+    "--n_workers", 
+    type=int, 
+    default=10, 
+    help="Number of worker threads to spawn"
+)
+@click.option(
+    "--trigger_t",
+    type=click.Choice(["library"]),
+    default="library",  
+    help="Function trigger to be used.",
+)
+@click.option(
+    "--memory",
+    default=None,
+    type=int,
+    help="Override default memory settings for the benchmark function.",
+)
+@click.option(
+    "--timeout",
+    default=None,
+    type=int,
+    help="Override default timeout settings for the benchmark function.",
+)
+@click.option(
+    "--result_dir",
+    default="schedule-results",
+    type=str,
+    help="Results directory"
+)
+@common_params
+def open_close(
+    schedule_config,
+    n_workers,
+    trigger_t,
+    memory,
+    timeout,
+    result_dir,
+    **kwargs,
+):
+    # Universal common set up
+    (
+        config,
+        output_dir,
+        logging_filename,
+        sebs_client,
+        deployment_client,
+    ) = parse_common_params(**kwargs)
     
+    experiment_config = sebs_client.get_experiment_config(config["experiments"])
+    
+    if os.path.exists(result_dir):
+        shutil.rmtree(result_dir)
+    os.mkdir(result_dir)
+    # Load schedule config
+    with open(schedule_config, "r") as fp:
+        schedule_config = json.load(fp)
+    schedule_config = sebs_client.get_schedule_config(schedule_config)
+    
+    # Set up each benchmark trigger here
+    # We differ from open schedule here because we don't want to create n copies of the benchmark obj
+    triggers_m = {}
+    for benchmark in schedule_config.fns:
+        update_nested_dict(config, ["experiments", "benchmark"], benchmark)
+        benchmark_obj = sebs_client.get_benchmark(
+            benchmark,
+            deployment_client,
+            experiment_config,
+            logging_filename=logging_filename
+        )
+        if memory is not None:
+            benchmark_obj.benchmark_config.memory = memory
+        if timeout is not None:
+            benchmark_obj.benchmark_config.timeout = timeout
+
+        func = deployment_client.get_function(
+            benchmark_obj,
+            deployment_client.default_function_name(benchmark_obj),
+        )
+        storage = deployment_client.get_storage(replace_existing=experiment_config.update_storage)
+        input_config = benchmark_obj.prepare_input(storage=storage, size="small")
+        
+        result = sebs.experiments.ExperimentResult(experiment_config, deployment_client.config)
+        result.begin()
+        
+        trigger_type = Trigger.TriggerType.get(trigger_t)
+        triggers = func.triggers(trigger_type)
+        if len(triggers) == 0:
+            trigger = deployment_client.create_trigger(func, trigger_type)
+        else:
+            trigger = triggers[0]
+        print(f"{benchmark=}")
+        triggers_m[benchmark] = {}
+        triggers_m[benchmark]["trigger"] = trigger
+        triggers_m[benchmark]["function"] = func
+        triggers_m[benchmark]["input"] = input_config
+        triggers_m[benchmark]["result"] = result
+    # Split the schedule among the n worker threads
+    schedules = _split_schedule(n_workers, schedule_config)
+    result_queue = Queue(maxsize=n_workers)
+    workers = []
+    for i in range(n_workers):
+        p = Process(target=worker_thread, args=(i, triggers_m, schedules[i], result_queue))
+        workers.append(p)
+        p.start()
+    counter = {}
+    for fn_name in triggers_m.keys():
+        counter[fn_name] = {"success": 0, "failure": 0}
+    # Worker invocation times
+    earliest_client_begin = None
+    latest_client_end = None
+    total_success = 0
+    total_failure = 0
+    for i in range(n_workers):
+        print(f"Getting the {i}-th result")
+        return_dict = result_queue.get()
+        
+        client_start = return_dict["worker_start"]
+        client_end = return_dict["worker_end"]
+        if earliest_client_begin is None or client_start < earliest_client_begin:
+            earliest_client_begin = client_start
+        if latest_client_end is None or client_end > latest_client_end:
+            latest_client_end = client_end
+        
+        rets = return_dict["ret"]
+        sub_counter = return_dict["counter"]
+        for fn_name in triggers_m.keys():
+            func = triggers_m[fn_name]["function"]
+            for ret in rets[fn_name]:
+                triggers_m[fn_name]["result"].add_invocation(func, ret)
+            counter[fn_name]["success"] += sub_counter[fn_name]["success"]
+            total_success += sub_counter[fn_name]["success"]
+            counter[fn_name]["failure"] += sub_counter[fn_name]["failure"]
+            total_failure += sub_counter[fn_name]["failure"]
+    for p in workers:
+        p.join()
+    
+    with open(os.path.join(result_dir, f"tracking_failures.txt"), "w") as outf:
+        total = total_success + total_failure
+        percent_succ = float(total_success/total * 100)
+        percent_fail = float(total_failure/total * 100)
+        for benchmark in triggers_m.keys():
+            outf.write(f"{benchmark}: {counter[benchmark]['success']}{counter[benchmark]['failure']} failures\n")
+        schedule_duration = (latest_client_end - earliest_client_begin) / 1_000_000_000
+        outf.write(f"Schedule duration: {schedule_duration}\n")
+        outf.write(f"Total success {total_success}\n")
+        outf.write(f"% successful invocations {percent_succ:.3f}\n")
+        outf.write(f"Total failure {total_failure}\n")
+        outf.write(f"% failed invocations {percent_fail:.3f}\n")
+
+    for benchmark in triggers_m.keys():
+        print(f"{benchmark}: {counter[benchmark]} failures")
+        result = triggers_m[benchmark]["result"]
+        
+        result.end()
+        result_file = os.path.join(result_dir, f"experiments_open_close_{benchmark}.json")
+        with open(result_file, "w") as out_f:
+            out_f.write(sebs.utils.serialize(result))
 
 
 @benchmark.command()

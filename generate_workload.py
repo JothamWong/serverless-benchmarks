@@ -7,6 +7,7 @@ with open("candidates_out_1_14.json", "r") as inf:
     fns = json.load(inf)
     
 ONE_SECOND = 1_000_000_000
+FIFTEEN_SECONDS = ONE_SECOND * 15
 ONE_MINUTE = 60_000_000_000
 
 if len(sys.argv) == 2:

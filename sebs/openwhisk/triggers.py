@@ -141,6 +141,7 @@ class LibraryTrigger(Trigger):
         command = self.wsk_cmd + self.get_command(payload)
         self.logging.info(f"Command is {' '.join(command)}")
         error = None
+        parsed_response = ""
         try:
             begin = datetime.datetime.now()
             response = subprocess.run(
@@ -157,7 +158,7 @@ class LibraryTrigger(Trigger):
 
         openwhisk_result = ExecutionResult.from_times(begin, end)
         if error is not None:
-            self.logging.error("Invocation of {} failed!".format(self.fname))
+            self.logging.error("Invocation of {} failed! Trace: {}".format(self.fname, parsed_response))
             openwhisk_result.stats.failure = True
             return openwhisk_result
 

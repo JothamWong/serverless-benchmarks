@@ -5,7 +5,9 @@ client_end: when the client received the response
 output_begin: when the worker started function
 output_end: when the worker finished function, havent transmitted
 
-schedule_duration: start of earliest client_begin to end of client_end
+schedule_duration: start of earliest client_begin to latest client_end
+
+Track failure/success cases
 
 In non-blocking, schedule duration is lower
 In blocking, schedule duration is higher

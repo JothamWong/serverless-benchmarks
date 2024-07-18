@@ -206,7 +206,7 @@
         "deployment": {
           "files": [
             "__main__.py",
-              "storage.py",
+            "storage.py",
             "setup.py",
             "seq_main.py"
           ],

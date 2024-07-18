@@ -4,6 +4,7 @@ import subprocess
 from typing import cast, Dict, List, Optional, Tuple, Type, Union
 
 import docker
+import traceback
 
 from sebs.benchmark import Benchmark
 from sebs.cache import Cache
@@ -186,10 +187,13 @@ class OpenWhisk(System):
         buildargs = {"VERSION": language_version, "BASE_IMAGE": builder_image}
         self.logging.info(f"Jotham: tag={repository_name}:{image_tag}, path={build_dir}, buildargs={buildargs}")
         # docker build tag does not play nicely with / for the tag
-        image, _ = self.docker_client.images.build(
-            tag=f"{repository_name}:{image_tag}", path=build_dir, buildargs=buildargs, network_mode="host"
-        )
-
+        try:
+            image, _ = self.docker_client.images.build(
+                tag=f"{repository_name}:{image_tag}", path=build_dir, buildargs=buildargs, network_mode="host"
+            )
+        except docker.errors.BuildError as e:
+            traceback.print_exc()
+            print(e)
         # Now push the image to the registry
         # image will be located in a private repository
         self.logging.info(
@@ -449,6 +453,7 @@ class OpenWhisk(System):
             code_package.language_name,
             code_package.language_version,
         )
+        print(*self.storage_arguments())
         try:
             subprocess.run(
                 [

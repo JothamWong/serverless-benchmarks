@@ -16,6 +16,7 @@ from sebs.faas.config import Config
 from sebs.utils import has_platform, LoggingHandlers, LoggingBase, find_benchmark
 
 from sebs.experiments.config import Config as ExperimentConfig
+from sebs.experiments.schedule import ScheduleConfig
 from sebs.experiments import Experiment
 
 from sebs.openwhisk.seq_benchmark import SequenceBenchmark
@@ -134,6 +135,9 @@ class SeBS(LoggingBase):
 
     def get_experiment_config(self, config: dict) -> ExperimentConfig:
         return ExperimentConfig.deserialize(config)
+    
+    def get_schedule_config(self, config: dict) -> ScheduleConfig:
+        return ScheduleConfig.deserialize(config)
 
     def get_experiment(
         self, experiment_type: str, config: dict, logging_filename: Optional[str] = None

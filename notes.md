@@ -1,5 +1,84 @@
 # Some stuff to note
 
+## If things break
+
+Specifically if activations don't show up, almost guaranteed elasticsearch ran outta space.
+
+run `docker logs elasticsearch0` to verify
+
+If it says errors, need to clear the data and redeploy.
+tbh idk if clearing the indices is sufficient, but i currently clear indices
+and then redeploy the ansible component and it works like a charm
+
+kill it with `curl -X DELETE 'http://localhost:9200/_all'`
+
+another source of issue is the minio instance taking up too much space
+kill the minio container, docker system prune, spin it up again, and edit the system.json file.
+
+## Using elastic search
+
+So when using elastic search as the activation store using the ansible approach, one thing that can happen is an erronous activation id does not exist, even though it should. As it turns out, elasticsearch has some tolerance settings for how much data it can store.
+
+Accordingly, https://stackoverflow.com/questions/33369955/low-disk-watermark-exceeded-on
+
+The solution would be to turn off these thresholds.
+
+```bash
+curl -XPUT -H "Content-Type: application/json" http://localhost:9200/_cluster/settings -d '{ "transient": { "cluster.routing.allocation.disk.threshold_enabled": false } }'
+
+
+curl -XPUT -H "Content-Type: application/json" http://localhost:9200/_all/_settings -d '{"index.blocks.read_only_allow_delete": null}'
+```
+
+## Handling large requests
+
+The default configuration for default deployment is insufficient for azure trace scale workload.
+The following things need to be done:
+
+https://github.com/apache/openwhisk/blob/master/docs/intra-concurrency.md
+
+Firstly, invoker has a limit on max number of container instances (n) running at one time.
+Handling > n requests entails buffering requests in memory. So you need to increase the JVM
+heap size to handle larger workloads. (See known-issues)
+
+We will also need to create additional invoker instances.
+Invokers are the openwhisk components that actually execute said function by spinning up a docker container. This is done in `mycluster.yaml`, as seen in https://github.com/apache/openwhisk-deploy-kube/blob/master/docs/configurationChoices.md.
+
+scale=1 is too much at the moment, definitely need to scale down
+
+TODO:
+1. Figure out how to improve async invocation for OpenWhisk
+2. Add more metrics
+  1. execution only (already handled) start->func->end
+  2. end-to-end (starting from invocation request to actual request finish (?), not really possible)
+  3. queueing latency
+  4. actual requests/sec served
+
+## Openwhisk annotation
+
+https://github.com/apache/openwhisk/blob/master/docs/annotations.md
+waitTime: the time spent waiting in the internal OpenWhisk system. This is roughly the time spent between the controller receiving the activation request and when the invoker provisioned a container for the action.
+
+## Possible errors
+
+```
+{
+    "begin": "1718982121.479089",
+    "end": "1718982133.660883",
+    "request_id": "0b41ddfd4cf949df81ddfd4cf9b9df75",
+    "result": "Error - invocation failed! Reason: HTTPConnectionPool(host='10.90.36.41', port=9011): Max retries exceeded with url: /sebs-benchmarks-16fda0a0/210.thumbnailer-0-output/5_asphalt-atmosphere-cloudy-sky-2739010.e255cbf2.jpg (Caused by ReadTimeoutError(\"HTTPConnectionPool(host='10.90.36.41', port=9011): Read timed out. (read timeout=1)\"))",
+    "results_time": 12181794.0
+}
+```
+
+Unsure why this really happens. Is there a rate limiter on minio itself?
+
+## configuration
+
+- `actionsInvokesPerminute`: limits max number of invocations per minute
+- `actionsInvokesConcurrent`: limits max number of concurrent invocations
+- `containerPool`: total memory available per `invoker` instance. `Invoker` uses this memory to create containers for user-actions. The concurrency limits will depend upon the total memory configured for `containerPool` and memory allocated per action (`default`: 256mb per container).
+
 ## pip changes
 urllib3<2
 types-requests<2.31.0.7

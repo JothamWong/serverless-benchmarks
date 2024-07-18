@@ -1,3 +1,6 @@
+# IMDB
+acllmdb/
+
 # SeBS specific
 regression*
 *_code
@@ -182,3 +185,6 @@ cache
 # IntelliJ IDEA files
 .idea
 *.iml
+
+# Benchmark data
+benchmarks-data/benchmarks-data-tmp/600.chaining

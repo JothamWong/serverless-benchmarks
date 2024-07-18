@@ -59,7 +59,7 @@ class PerfCost(Experiment):
             self._trigger = deployment_client.create_trigger(
                 self._function, Trigger.TriggerType.HTTP
             )
-        else:
+        else:   
             self._trigger = triggers[0]
 
         self._out_dir = os.path.join(sebs_client.output_dir, "perf-cost")

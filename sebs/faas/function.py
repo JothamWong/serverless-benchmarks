@@ -26,6 +26,17 @@ class ExecutionTimes:
     initialization: int
     http_startup: int
     http_first_byte_return: int
+    # Openwhisk specific times
+    
+    # The time spent waiting in the Openwhisk internal system, this is roughly
+    # the time spent between the controller receiving the activation request 
+    # and when the invoker provisioned a container for the action
+    waitTime: int
+    # The time spent initializing the function. If this value is present, the
+    # action required initialization and represents a cold start. A warm
+    # activation will skip initialization and this field will be -1.
+    initTime: int
+    
 
     def __init__(self):
         self.client = 0
@@ -164,6 +175,85 @@ class ExecutionResult:
         ret.request_id = cached_config["request_id"]
         ret.output = cached_config["output"]
         return ret
+    
+
+class OpenWhiskExecutionResult:
+    """Wrapper over ExecutionResult that contains Openwhisk specific results"""
+    # The time spent waiting in the Openwhisk internal system, this is roughly
+    # the time spent between the controller receiving the activation request 
+    # and when the invoker provisioned a container for the action
+    waitTime: int
+    # The time spent initializing the function. If this value is present, the
+    # action required initialization and represents a cold start. A warm
+    # activation will skip initialization and this field will be -1.
+    initTime: int
+    executionResult: ExecutionResult
+    failureReason: str
+    
+    @property
+    def stats(self):
+        return self.executionResult.stats
+    
+    @property
+    def request_id(self):
+        return self.executionResult.request_id
+    
+    def __init__(self):
+        self.executionResult = ExecutionResult()
+        self.waitTime = -1
+        self.initTime = -1
+        
+    @staticmethod
+    def from_times(client_time_begin: datetime, client_time_end: datetime) -> "OpenWhiskExecutionResult":
+        ret = OpenWhiskExecutionResult()
+        ret.executionResult = ExecutionResult()
+        ret.executionResult.times.client_begin = client_time_begin
+        ret.executionResult.times.client_end = client_time_end
+        ret.executionResult.times.client = int((client_time_end - client_time_begin) / timedelta(microseconds=1))
+        return ret
+        
+    def parse_benchmark_output(self, output: dict):
+        self.executionResult.parse_benchmark_output(output["response"]["result"])
+        for annotation in output["annotations"]:
+            if annotation["key"] == "waitTime":
+                self.executionResult.times.waitTime = annotation["value"]
+            if annotation["key"] == "initTime":
+                self.executionResult.times.initTime = annotation["value"]
+        
+    
+
+class NonBlockingExecutionResult:
+    activation_timestamp: int
+    return_timestamp: int
+    request_id: str
+    failure: bool
+    
+    def __init__(self):
+        self.request_id = ""
+        self.failure = False
+        self.activation_timestamp = 0
+        self.return_timestamp = 0
+        
+    @staticmethod
+    def deserialize(response: str, begin: int, end: int) -> "NonBlockingExecutionResult":
+        # There seems to be only two cases
+        # Failure:
+        # 'error: Unable to invoke action '601.helloworld-p': 
+        # The requested resource does not exist. (code DwOdq10RVdKPOQnz7njiPxNcuNOy7vT3)'
+        # Success:
+        # 'ok: invoked /_/601.helloworld-python-3.7 with id 216ffb8223024fcdaffb8223026fcd81'
+        ret = NonBlockingExecutionResult()
+        ret.activation_timestamp = begin
+        ret.return_timestamp = end
+        
+        if response.startswith("error:"):
+            ret.failure = True
+        elif response.startswith("ok:"):
+            response = response.strip()
+            ret.request_id = response.split(" ")[-1]
+        else:
+            raise ValueError(f"Unaccounted for case: {response}")
+        return ret   
 
 
 """
@@ -240,6 +330,14 @@ class Trigger(ABC, LoggingBase):
     @staticmethod
     @abstractmethod
     def trigger_type() -> "Trigger.TriggerType":
+        pass
+    
+    @abstractmethod
+    def openwhisk_nonblocking_invoke(self, payload: dict) -> "NonBlockingExecutionResult":
+        pass
+    
+    @abstractmethod
+    def parse_nb_results(self, nb_result: NonBlockingExecutionResult) -> ExecutionResult:
         pass
 
     @abstractmethod

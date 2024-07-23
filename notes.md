@@ -1,5 +1,12 @@
 # Some stuff to note
 
+## Poor S3
+
+At the moment, the Minio instance is p much expected to be a locally running Docker container.
+Thus, we can't really test for true network speed at the moment.
+A potential TODO is to remove this functionality so that we can try and approximate an actual upload/download.
+It wud be ++ to the benchmarks that use the minio functionality extensively.
+
 ## If things break
 
 Specifically if activations don't show up, almost guaranteed elasticsearch ran outta space.

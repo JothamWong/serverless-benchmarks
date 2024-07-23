@@ -195,8 +195,11 @@ class Minio(PersistentStorage):
                 self.connection.fget_object(bucket, obj, os.path.join(result_dir, obj))
 
     def clean_bucket(self, bucket: str):
+        self.connection.remove_object()
+        for obj in self.connection.list_objects(bucket_name=bucket):
+            obj.object_name
         delete_object_list = map(
-            lambda x: minio.DeleteObject(x.object_name),
+            lambda obj_name: self.connection.remove_object(bucket, obj_name),
             self.connection.list_objects(bucket_name=bucket),
         )
         errors = self.connection.remove_objects(bucket, delete_object_list)
@@ -259,6 +262,7 @@ class Minio(PersistentStorage):
         obj._input_prefixes = copy.copy(cached_config.input_buckets)
         obj._output_prefixes = copy.copy(cached_config.output_buckets)
         obj.configure_connection()
+        exit(1)
         return obj
 
     @staticmethod

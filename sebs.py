@@ -999,7 +999,28 @@ def storage_start(storage, output_json, port):
     else:
         logging.info("Writing storage configuration to stdout.")
         logging.info(json.dumps(storage_instance.serialize(), indent=2))
-
+        
+@storage.command("clear")
+@click.argument("input-json", type=click.Path(exists=True, dir_okay=False, readable=True))
+def clear_storage(input_json):
+    
+    sebs.utils.global_logging()
+    with open(input_json, "r") as f:
+        cfg = json.load(f)
+        storage_type = cfg["type"]
+        
+        storage_cfg, storage_resources = sebs.SeBS.get_storage_config_implementation(storage_type)
+        config = storage_cfg.deserialize(cfg)
+        
+        if "resources" in cfg:
+            resources = storage_resources.deserialize(cfg["resources"])
+        else:
+            resources = storage_resources() 
+        logging.info("Clearing all buckets")
+        storage = sebs.SeBS.get_storage_implementation(storage_type).deserialize(config, None, resources)
+        for bucket in storage.list_buckets():
+            print(bucket is None)
+            logging.info(bucket)
 
 @storage.command("stop")
 @click.argument("input-json", type=click.Path(exists=True, dir_okay=False, readable=True))

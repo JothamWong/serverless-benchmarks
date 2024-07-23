@@ -1,7 +1,8 @@
 SHELL := /bin/bash
 MINIO-URL=10.90.36.41
-OPENWHISK=/mnt/sdb/home/Jotham/openwhisk
-API := $(shell cat /mnt/sdb/home/Jotham/openwhisk/ansible/files/auth.guest)
+HOME_DIR := $(shell echo ~)
+OPENWHISK=$(HOME_DIR)/openwhisk
+API := $(shell cat $(OPENWHISK)/ansible/files/auth.guest)
 
 open-close:
 	make clear-cache

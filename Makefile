@@ -29,6 +29,8 @@ schedule-1024:
 wrk:
 	bash $(OPENWHISK)/tests/performance/wrk_tests/throughput.sh https://172.17.0.1 $(API) $(OPENWHISK)/tests/performance/preparation/actions/noop.js 100 110 2 1s
 
+clear-elasticsearch:
+	curl -X DELETE 'http://localhost:9200/_all
 
 # Simple check if can run a simple benchmark
 test:

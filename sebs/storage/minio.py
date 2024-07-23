@@ -262,7 +262,6 @@ class Minio(PersistentStorage):
         obj._input_prefixes = copy.copy(cached_config.input_buckets)
         obj._output_prefixes = copy.copy(cached_config.output_buckets)
         obj.configure_connection()
-        exit(1)
         return obj
 
     @staticmethod

@@ -123,7 +123,6 @@ class LibraryTrigger(Trigger):
             )
             end = datetime.datetime.now()
             parsed_response = response.stdout.decode("utf-8")
-            print(parsed_response)
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             end = datetime.datetime.now()
             error = e

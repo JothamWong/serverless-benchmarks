@@ -1,7 +1,7 @@
 import json
 # qemu has experiments postfixed
 qemu_results = "qemu-results/statistics.json"
-host_results = "results/statistics.json"
+host_results = "host-results/statistics.json"
 
 with open(qemu_results, "r") as f:
     qemu = json.load(f)
@@ -11,7 +11,9 @@ with open(host_results, "r") as f:
     
 def get_overhead(v1, v2):
     # Assume v1 is host, v2 is qemu
-    return ((v2 - v1) / v1) * 100.0
+    return (v2 / v1) * 100
+    # return ((v2 - v1) / v1) * 100.0
+    # return ((v2 - v1) / v1) * 100.0
     
 # Skip compression cos too much space requirements
 benchmarks = [
@@ -28,7 +30,7 @@ benchmarks = [
 for benchmark in benchmarks:
     print("*" * 25)
     print(f"{benchmark}")
-    host_df = host[benchmark]
+    host_df = host[benchmark + "_experiments"]
     qemu_df = qemu[benchmark + "_experiments"]
     # memusage
     host_mem_p0 = host_df["memusage"]["p0"]

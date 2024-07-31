@@ -31,7 +31,7 @@ def plot_cdf(exp_name: str, metric: str, data: np.array):
 def plot_pdf(exp_name: str, metric: str, data: np.array):
     plt.figure(figsize=(10,5))
     sns.kdeplot(data=data)
-    plt.savefig(f"{exp_name}_{metric}_pdf")
+    plt.savefig(f"{exp_name}_{metric}_pdf.png")
     plt.close()
 
 # Remove statistics.json if it exists

@@ -36,6 +36,8 @@ class ExecutionTimes:
     # action required initialization and represents a cold start. A warm
     # activation will skip initialization and this field will be -1.
     initTime: int
+    # Time spent in open-closed workload
+    latencyCorrection: int
     
 
     def __init__(self):

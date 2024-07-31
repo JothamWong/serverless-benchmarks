@@ -13,7 +13,7 @@ class LibraryTrigger(Trigger):
         super().__init__()
         self.fname = fname
         if wsk_cmd:
-            self._wsk_cmd = [*wsk_cmd, "action", "invoke", "--result", self.fname]
+            self._wsk_cmd = [*wsk_cmd, "action", "invoke", "--blocking", self.fname]
             # no --result means non-blocking
             self._nb_wsk_cmd = [*wsk_cmd, "action", "invoke", self.fname]
             self._wsk_get_cmd = [*wsk_cmd, "activation", "get"]
@@ -156,12 +156,16 @@ class LibraryTrigger(Trigger):
             end = datetime.datetime.now()
             error = e
 
-        openwhisk_result = ExecutionResult.from_times(begin, end)
+        openwhisk_result = OpenWhiskExecutionResult.from_times(begin, end)
         if error is not None:
             self.logging.error("Invocation of {} failed! Trace: {}".format(self.fname, parsed_response))
             openwhisk_result.stats.failure = True
             return openwhisk_result
 
+        # This includes the success return code in the first line
+        print(parsed_response)
+        if "ok" in parsed_response:
+            parsed_response = "\n".join(parsed_response.split("\n")[1:])
         return_content = json.loads(parsed_response)
         openwhisk_result.parse_benchmark_output(return_content)
         return openwhisk_result

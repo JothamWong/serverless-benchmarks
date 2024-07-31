@@ -476,8 +476,7 @@ def run_schedule(
         result_dir,
         invocation_start,
         invocation_end,
-        collection_start,
-        collection_end)
+        prefix="experiments_scheduled")
     
 def __convert_str_to_timestamp(ts: str):
     seconds, microseconds = ts.split(".")
@@ -500,10 +499,9 @@ def __convert_unix_to_timestamp(ts: int):
 def __analyze_schedule_results(
     triggers_m: dict, 
     result_dir: str,
-    invocation_start: int,
-    invocation_end: int,
-    collection_start: int,
-    collection_end: int,
+    client_start: int,
+    client_end: int,
+    prefix: str,
     ):
     """Calculates the following metrics
     From the main schedule script, we obtained the following metrics:
@@ -518,12 +516,9 @@ def __analyze_schedule_results(
     result_f = open(os.path.join(result_dir, "results_log.txt"), "w")
     # Actual scheduling
     result_f.write("Done with schedule experiment\n")
-    result_f.write(f"Start =  {invocation_start}\n")
-    result_f.write(f"End   =  {invocation_end}\n")
-    result_f.write(f"Actual scheduled duration was {(invocation_end-invocation_start)/1_000_000_000} seconds.\n")
-    # Actual collection
-    result_f.write(f"Started collecting data at {collection_start}\n")
-    result_f.write(f"Done collecting data at    {collection_end}\n")
+    result_f.write(f"Start =  {client_start}\n")
+    result_f.write(f"End   =  {client_end}\n")
+    result_f.write(f"Actual scheduled duration was {(client_end-client_start)/1_000_000_000} seconds.\n")
     
     # Obtain actual invocation per second for experiment
     earliest_invocation_start = None
@@ -536,10 +531,12 @@ def __analyze_schedule_results(
     overall_queueing_latencies = []
     overall_initialization_latencies = []
     overall_execution_latencies = []
+    total_num_warm = 0
+    total_num_cold = 0
     
     # Benchmark specific metric
     for benchmark in triggers_m.keys():
-        with open(os.path.join(result_dir, f"experiments_scheduled_{benchmark}.json")) as outf:
+        with open(os.path.join(result_dir, f"{prefix}_{benchmark}.json")) as outf:
             json_dict = json.load(outf)
         result_f.write("***********************************************\n")
         result_f.write(f"Statistics for {benchmark}\n")
@@ -583,14 +580,14 @@ def __analyze_schedule_results(
             
             # Both are in string
             invocation_began = __convert_str_to_timestamp(sub_result["output"]["begin"])
-            invocation_end = __convert_str_to_timestamp(sub_result["output"]["end"])
+            client_end = __convert_str_to_timestamp(sub_result["output"]["end"])
             
             if earliest_invocation_start is None or invocation_began < earliest_invocation_start:
                 earliest_invocation_start = invocation_began
-            if latest_invocation_end is None or invocation_end > latest_invocation_end:
-                latest_invocation_end = invocation_end
+            if latest_invocation_end is None or client_end > latest_invocation_end:
+                latest_invocation_end = client_end
                 
-            function_duration = int((invocation_end - invocation_began) / timedelta(milliseconds=1))
+            function_duration = int((client_end - invocation_began) / timedelta(milliseconds=1))
             function_execution_durations.append(function_duration)
             
             end_to_end_latency = queueing_latency + init_time + function_duration
@@ -612,7 +609,8 @@ def __analyze_schedule_results(
         overall_queueing_latencies.append(np.mean(queueing_latencies))
         overall_initialization_latencies.append(np.mean(initialization_latencies))
         overall_execution_latencies.append(np.mean(function_execution_durations))
-        
+        total_num_warm += num_warm
+        total_num_cold += num_cold
 
     # Actual requests/sec
     result_f.write(f"Actual invocation start: {earliest_invocation_start}\n")
@@ -626,6 +624,10 @@ def __analyze_schedule_results(
     result_f.write(f"% successful invocations {percent_succ:.3f}\n")
     result_f.write(f"Num failed invocations {failed_invocations}\n")
     result_f.write(f"% failed invocations {percent_fail:.3f}\n")
+    
+    result_f.write(f"Num warm invocations {total_num_warm}\n")
+    result_f.write(f"Num cold invocations {total_num_cold}\n")
+    result_f.write(f"% Warm invocations {total_num_warm/(total_num_warm + total_num_cold) * 100.0}\n")
     
     invocation_delta = int((latest_invocation_end - earliest_invocation_start) / timedelta(seconds=1))
     result_f.write(f"Actual invocations/second: {successful_invocations / invocation_delta}\n")
@@ -702,19 +704,21 @@ def worker_thread(idx: int, triggers: dict, schedule: List[ScheduleObject], queu
         trigger = triggers[so.fn_name]["trigger"]
         input_config = triggers[so.fn_name]["input"]
         
+        # Modified to return OpenWhisk wrapper
         ret = trigger.sync_invoke(input_config)
         try:
-            if ret.stats.failure:
+            if ret.executionResult.stats.failure:
                 counters[so.fn_name]["failure"] += 1
             else:
-                ret.times.waitTime = waiting_time
+                # TODO: Is this actually correct?
+                ret.executionResult.times.latencyCorrection = waiting_time
                 counters[so.fn_name]["success"] += 1
         except KeyError as e:
             print(f"key error with {so.fn_name}")
             print("All keys are ")
             for key in counters.keys():
                 print(key)
-        rets[so.fn_name].append(ret)
+        rets[so.fn_name].append(ret.executionResult)
     print(f"Worker {idx} is done with schedule.")
     invocation_end = time.time_ns()
     return_dict = {
@@ -846,16 +850,14 @@ def open_close(
         p = Process(target=worker_thread, args=(i, triggers_m, schedules[i], result_queue))
         workers.append(p)
         p.start()
-    counter = {}
-    for fn_name in triggers_m.keys():
-        counter[fn_name] = {"success": 0, "failure": 0}
+    # We need to aggregate all results from each worker now
+    for benchmark in triggers_m.keys():
+        triggers_m[benchmark]["success"] = 0
+        triggers_m[benchmark]["failure"] = 0
     # Worker invocation times
     earliest_client_begin = None
     latest_client_end = None
-    total_success = 0
-    total_failure = 0
     for i in range(n_workers):
-        print(f"Getting the {i}-th result")
         return_dict = result_queue.get()
         
         client_start = return_dict["worker_start"]
@@ -865,41 +867,34 @@ def open_close(
         if latest_client_end is None or client_end > latest_client_end:
             latest_client_end = client_end
         
-        rets = return_dict["ret"]
+        rets = return_dict["ret"]   
         sub_counter = return_dict["counter"]
-        for fn_name in triggers_m.keys():
-            func = triggers_m[fn_name]["function"]
-            for ret in rets[fn_name]:
-                triggers_m[fn_name]["result"].add_invocation(func, ret)
-            counter[fn_name]["success"] += sub_counter[fn_name]["success"]
-            total_success += sub_counter[fn_name]["success"]
-            counter[fn_name]["failure"] += sub_counter[fn_name]["failure"]
-            total_failure += sub_counter[fn_name]["failure"]
+        for benchmark in triggers_m.keys():
+            func = triggers_m[benchmark]["function"]
+            for ret in rets[benchmark]:
+                triggers_m[benchmark]["result"].add_invocation(func, ret)
+            triggers_m[benchmark]["success"] += sub_counter[benchmark]["success"]
+            triggers_m[benchmark]["failure"] += sub_counter[benchmark]["failure"]
+    
     for p in workers:
         p.join()
-    
-    with open(os.path.join(result_dir, f"tracking_failures.txt"), "w") as outf:
-        total = total_success + total_failure
-        percent_succ = float(total_success/total * 100)
-        percent_fail = float(total_failure/total * 100)
-        for benchmark in triggers_m.keys():
-            outf.write(f"{benchmark}: {counter[benchmark]['success']}{counter[benchmark]['failure']} failures\n")
-        schedule_duration = (latest_client_end - earliest_client_begin) / 1_000_000_000
-        outf.write(f"Schedule duration: {schedule_duration}\n")
-        outf.write(f"Total success {total_success}\n")
-        outf.write(f"% successful invocations {percent_succ:.3f}\n")
-        outf.write(f"Total failure {total_failure}\n")
-        outf.write(f"% failed invocations {percent_fail:.3f}\n")
 
+    # Write all files
     for benchmark in triggers_m.keys():
-        print(f"{benchmark}: {counter[benchmark]} failures")
         result = triggers_m[benchmark]["result"]
         
-        result.end()
+        result.end()  # This call is redundant, but just to make sure the time is non null
         result_file = os.path.join(result_dir, f"experiments_open_close_{benchmark}.json")
         with open(result_file, "w") as out_f:
             out_f.write(sebs.utils.serialize(result))
-
+    
+    __analyze_schedule_results(
+        triggers_m,
+        result_dir,
+        earliest_client_begin,
+        latest_client_end,
+        prefix="experiments_open_close"
+    )
 
 @benchmark.command()
 @common_params

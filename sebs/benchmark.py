@@ -359,6 +359,9 @@ class Benchmark(LoggingBase):
                 
     def add_deployment_package_python(self, output_dir):
         # append to the end of requirements file
+        # NOTE: There exists an edge case where you do not have an
+        # EOF at the requirements.txt which is perfectly natural
+        # so we handle it by always writing a newline at the file
         packages = self._system_config.deployment_packages(
             self._deployment_name, self.language_name
         )
@@ -366,6 +369,7 @@ class Benchmark(LoggingBase):
         self.logging.info(f"Output_dir is {output_dir}")
         if len(packages):
             with open(os.path.join(output_dir, "requirements.txt"), "a") as out:
+                out.write("\n")
                 for package in packages:
                     out.write(package)
 

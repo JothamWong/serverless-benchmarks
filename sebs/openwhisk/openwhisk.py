@@ -171,7 +171,6 @@ class OpenWhisk(System):
         )
 
         for fn in os.listdir(directory):
-            self.logging.info(f"JothamWong: directory {directory} and fn {fn}")
             if fn not in ("index.js", "__main__.py", "seq_main.py"):
                 file = os.path.join(directory, fn)
                 shutil.move(file, build_dir)
@@ -189,7 +188,10 @@ class OpenWhisk(System):
         # docker build tag does not play nicely with / for the tag
         try:
             image, _ = self.docker_client.images.build(
-                tag=f"{repository_name}:{image_tag}", path=build_dir, buildargs=buildargs, network_mode="host"
+                tag=f"{repository_name}:{image_tag}", 
+                path=build_dir, 
+                buildargs=buildargs, 
+                network_mode="host"
             )
         except docker.errors.BuildError as e:
             traceback.print_exc()
@@ -239,9 +241,7 @@ class OpenWhisk(System):
             CONFIG_FILES["python"] = ["seq_main.py"]
         
         package_config = CONFIG_FILES[language_name]
-        print(f"HAAXXXXXXXXXXXXXXXXXXX {directory=}")
         benchmark_archive = os.path.join(directory, f"{benchmark}.zip")
-        print(f"HAAXXXXXXXXXXXXXXXXXXX {benchmark_archive=}")
         subprocess.run(
             ["zip", benchmark_archive] + package_config, stdout=subprocess.DEVNULL, cwd=directory
         )

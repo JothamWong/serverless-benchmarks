@@ -55,6 +55,10 @@ The benchmark implements two operations on video files: adding a watermark and c
 The benchmark implements a common functionality of websites managing file operations - gather a set of files in cloud storage, compress them together, and return a single archive to the user.
 It implements the .zip file creation with the help of the `shutil` standard library in Python.
 
+### AES
+
+The benchmark implements the aes functionality which is commonly used in many benchmarks using the `pyaes` Python library.
+
 ## Inference
 
 ### Image Recognition

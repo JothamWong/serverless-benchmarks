@@ -1,5 +1,5 @@
 
-SeBS has three basic commands: `benchmark`, `experiment`, and `local`.
+SeBS has three basic commands: `benchmark`, `open-close`, ` schedule`, `experiment`, and `local`.
 For each command you can pass `--verbose` flag to increase the verbosity of the output.
 By default, all scripts will create a cache in the directory `cache` to store code with
 dependencies and information on allocated cloud resources.
@@ -21,6 +21,10 @@ The example below invokes the benchmark `110.dynamic-html` on AWS via the standa
 
 To configure your benchmark, change settings in the config file or use command-line options.
 The full list is available by running `./sebs.py benchmark invoke --help`.
+
+### Schedule and open-close
+
+For more information, please refer to `schedule.md`.
 
 ### Regression
 

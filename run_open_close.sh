@@ -1,6 +1,6 @@
 #!/bin/bash
 
-python3 generate_workload.py 0.005
+python3 generate_workload.py --scale 0.005
 
 nums=("1" "5" "10")
 # nums=("1" "2" "3" "4" "5")

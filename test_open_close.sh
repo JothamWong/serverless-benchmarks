@@ -7,7 +7,7 @@ run_open_close() {
     rm -rf cache/
     # If existing results
     rm -rf "open_close_$scale"
-    python3 generate_workload.py "$scale"
+    python3 generate_workload.py --scale "$scale"
     python3 sebs.py open-close open-close --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --n_workers 10 --output-dir tmpscheduled --result_dir "open_close_$scale"
     python3 analyze_open_close.py --name "$scale"
 }

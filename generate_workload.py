@@ -1,5 +1,11 @@
+import argparse
 import sys
 import json
+
+args = argparse.ArgumentParser()
+args.add_argument("--scale", type=float, default=0.001, help="Scaling the workload")
+args.add_argument("--duration", type=int, default=1, help="How many minutes to run the workload for")
+opts = args.parse_args()
 
 schedule_config = {"functions": []}
 
@@ -10,12 +16,8 @@ ONE_SECOND = 1_000_000_000
 FIFTEEN_SECONDS = ONE_SECOND * 15
 ONE_MINUTE = 60_000_000_000
 
-if len(sys.argv) == 2:
-    SCALE = float(sys.argv[1])
-else:
-    SCALE = 0.001
-# DURATION = 1440
-DURATION = 1  # Fix to 5 minutes first
+SCALE = opts.scale
+DURATION = opts.duration
 
 fn_statistics = {}
 

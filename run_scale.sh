@@ -9,7 +9,7 @@ echo "Running open"
 for scale in "${scales[@]}"; do
     bash run_minio.sh
     make clear-cache
-    python3 generate_workload.py $scale
+    python3 generate_workload.py --scale $scale
     python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --output-dir tmpscheduled --result_dir open-results-scale-$scale
     bash stop_minio.sh
     curl -X DELETE 'http://localhost:9200/_all'
@@ -19,7 +19,7 @@ done
 for scale in "${scales[@]}"; do
     bash run_minio.sh
     make clear-cache
-    python3 generate_workload.py $scale
+    python3 generate_workload.py --scale $scale
 	python3 sebs.py open-close open-close --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --n_workers 10 --output-dir tmpscheduled --result_dir open_close-results-scale-$scale
     bash stop_minio.sh
     curl -X DELETE 'http://localhost:9200/_all'

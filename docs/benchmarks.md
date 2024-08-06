@@ -71,11 +71,14 @@ The benchmark represents scientific computations offloaded to serverless functio
 
 This benchmark is inspired by the [DNAVisualization](https://github.com/Benjamin-Lee/DNAvisualization.org) project and it implements processing the `.fasta` file with the `squiggle` Python library.
 
-## Serverless Workflows
+## Chaining
 
-**(WiP)** Coming soon!
+This benchmark represents serverless chaining computations and allows one to test inline vs minio object storage as the data transfer method. For more information on implementing your own chaining benchmarks, please refer to `chaining.md`.
 
-## Applications
+### Hello World
 
-**(WiP)** Coming soon!
+This is a test benchmark to verify correctness of the sequence chaining and is not intended for actual benchmarking.
 
+### Content-Moderation
+
+Content moderation is a simple chain of two nodes with the first node effectively being a no-op which serves to pull the input. This benchmark allows one to study the effects of using either inline transfer or object storage for the data transfer method to the second node. It implements a simple sentiment analysis to classify text as positive or negative using the `nltk` Python library.

@@ -28,10 +28,10 @@ run_experiment() {
     mv $BENCHMARK_RESULTS $RESULTS_FOLDER/$BENCHMARK_RESULTS
 }
 
-run_experiment "110.dynamic-html"
-run_experiment "120.uploader"
-run_experiment "210.thumbnailer"
-run_experiment "220.video-processing"
+# run_experiment "110.dynamic-html"
+# run_experiment "120.uploader"
+# run_experiment "210.thumbnailer"
+# run_experiment "220.video-processing"
 # run_experiment "311.compression"
 run_experiment "411.image-recognition"
 run_experiment "501.graph-pagerank"

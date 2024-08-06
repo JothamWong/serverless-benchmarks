@@ -6,7 +6,7 @@ API := $(shell cat $(OPENWHISK)/ansible/files/auth.guest)
 
 open-close:
 	make clear-cache
-	python3 sebs.py open-close open-close --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --n_workers 10 --output-dir tmpscheduled --result_dir open_close
+	python3 sebs.py open-close open-close --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --n_workers 5 --output-dir tmpscheduled --result_dir open_close
 
 gen-candidates:
 	python3 generate_candidates.py
@@ -16,7 +16,7 @@ gen-schedule:
 
 schedule:
 	make clear-cache
-	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --output-dir tmpscheduled --memory 128 --result_dir mem128
+	python3 sebs.py schedule run-schedule --config config/openwhisk.json --deployment openwhisk --verbose --schedule_config generated_schedule.json --output-dir tmpscheduled --result_dir ha-results
 
 schedule-512:
 	make clear-cache
@@ -34,7 +34,7 @@ clear-elasticsearch:
 
 # Simple check if can run a simple benchmark
 test:
-	python3 sebs.py benchmark invoke 411.image-recognition test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 10 --trigger library
+	python3 sebs.py benchmark invoke 312.aes test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 10 --trigger library
 
 test-2:
 	python3 sebs.py benchmark invoke 120.uploader test --config config/openwhisk.json --deployment openwhisk --verbose --repetitions 1000 --trigger library

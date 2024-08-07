@@ -29,7 +29,7 @@ class LibraryTrigger(Trigger):
 
     @wsk_cmd.setter
     def wsk_cmd(self, wsk_cmd: List[str]):
-        self._wsk_cmd = [*wsk_cmd, "action", "invoke", "--result", self.fname]
+        self._wsk_cmd = [*wsk_cmd, "action", "invoke", "--blocking", self.fname]
         
     @property
     def nb_wsk_cmd(self) -> List[str]:

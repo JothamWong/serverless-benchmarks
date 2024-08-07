@@ -42,6 +42,7 @@ def handler(event):
         
         model_process_begin = datetime.datetime.now()
         model = rnn.RNN(n_letters, 128, n_letters, all_categories, n_categories, all_letters, n_letters)
+        model.load_state_dict(torch.load(model_path))
         model.eval()
         model_process_end = datetime.datetime.now()
     else:

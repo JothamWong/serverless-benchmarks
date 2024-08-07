@@ -5,9 +5,9 @@ import os
 # start_letters : text (example: 'ABCDEFGHIJKLMNOP'
 
 generator = {
-    'test': ['English', 'Bob'],
-    'small': ['English', 'Bob'],
-    'large': ['English', 'Bob']
+    'test': ['English', 'ABC'],
+    'small': ['English', 'ABCDEFGHIJKLMOPQRSTUVWXYZ'],
+    'large': ['English', 'ABCDEFGHIJKLMOPQRSTUVWXYZ']
 }
 
 def input_generator(size):
